@@ -7,6 +7,10 @@ body {
   font-family: Arial, sans-serif;
 }
 
+button {
+  font: inherit;
+}
+
 main {
   max-width: 900px;
   margin: 0 auto;
@@ -25,6 +29,10 @@ main {
   border-radius: 8px;
 }
 
+.market-card--selected {
+  border-width: 2px;
+}
+
 .market-card h2 {
   margin-top: 0;
 }
@@ -32,4 +40,16 @@ main {
 .market-outcomes {
   display: flex;
   gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.market-detail,
+.market-detail-empty {
+  margin-top: 2rem;
+}
+
+.market-detail {
+  padding: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
 }
