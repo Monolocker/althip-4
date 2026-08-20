@@ -5,7 +5,7 @@ export interface MarketOutcome {
     price: number
 }
 
-export interface Market {
+export interface OutcomeMarket {
     id: string
     question: string
     status: "open" | "closed"

@@ -1,6 +1,6 @@
-import type { Market } from "../types/market"
+import type { OutcomeMarket } from "../types/market"
 
-export const fakeMarkets: Market[] = [
+export const fakeMarkets: OutcomeMarket[] = [
     {
         id: "btc-100k",
         question: "Will Bitcoin be above $100,000 at the end of the year?",

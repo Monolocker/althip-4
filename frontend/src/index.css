@@ -8,5 +8,28 @@ body {
 }
 
 main {
+  max-width: 900px;
+  margin: 0 auto;
   padding: 2rem;
+}
+
+.market-list {
+  display: grid;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.market-card {
+  padding: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+}
+
+.market-card h2 {
+  margin-top: 0;
+}
+
+.market-outcomes {
+  display: flex;
+  gap: 1rem;
 }
