@@ -17,23 +17,37 @@ function App() {
   }
 
   return (
-    <main>
-      <h1>Hyperliquid Outcomes</h1>
-      <p>Read-only outcome market terminal</p>
+    <main className="app-shell">
+      <header className="app-header">
+        <div>
+          <h1>Hyperliquid Outcomes</h1>
+          <p>Read-only outcome market terminal</p>
+        </div>
+      </header>
 
-      <MarketList
-        markets={fakeMarkets}
-        selectedMarketId={selectedMarketId}
-        onSelect={handleSelectMarket}
-      />
+      <div className="terminal-layout">
+        <aside className="market-sidebar">
+          <MarketList
+            markets={fakeMarkets}
+            selectedMarketId={selectedMarketId}
+            onSelect={handleSelectMarket}
+          />
+        </aside>
 
-      {selectedMarket ? (
-        <MarketDetail market={selectedMarket} />
-      ) : (
-        <p className="market-detail-empty">
-          Select a market to view its details.
-        </p>
-      )}
+        <section className="market-workspace">
+          {selectedMarket ? (
+            <MarketDetail market={selectedMarket} />
+          ) : (
+            <div className="market-detail-empty">
+              <h2>Select a market</h2>
+              <p>
+                Choose a market from the list to inspect its
+                details.
+              </p>
+            </div>
+          )}
+        </section>
+      </div>
     </main>
   )
 }
