@@ -268,4 +268,18 @@ button {
   .order-book-placeholder {
     grid-template-columns: 1fr;
   }
+
+  .request-status {
+    margin: 0;
+    padding: 1rem;
+    color: #666;
+  }
+  
+  .request-status--error {
+    color: #8a1c1c;
+  }
+  
+  .request-status--error p {
+    margin-bottom: 0;
+  }
 }
