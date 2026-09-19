@@ -4,6 +4,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from app.models.market import OutcomeMarket, OutcomeSide
+
 logger = logging.getLogger(__name__)
 
 def parse_spec(description: str) -> dict[str, str]:
