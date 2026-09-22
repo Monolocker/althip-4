@@ -1,4 +1,5 @@
 import type { OutcomeMarket } from '../types/market'
+import { formatCloseTime, formatPrice } from '../utils/format'
 
 interface MarketDetailProps {
   market: OutcomeMarket
@@ -25,7 +26,17 @@ function MarketDetail({ market }: MarketDetailProps) {
 
         <div>
           <dt>Closes</dt>
-          <dd>{market.closesAt}</dd>
+          <dd>{formatCloseTime(market.closesAt)}</dd>
+        </div>
+
+        <div>
+          <dt>Venue</dt>
+          <dd>{market.venue || "—"}</dd>
+        </div>
+
+        <div>
+          <dt>Quote token</dt>
+          <dd>{market.quoteToken}</dd>
         </div>
       </dl>
 
@@ -33,16 +44,22 @@ function MarketDetail({ market }: MarketDetailProps) {
         <h3>Outcomes</h3>
 
         <div className="detail-outcomes">
-          {market.outcomes.map((outcome) => (
+          {market.sides.map((side) => (
             <article
               className="detail-outcome-card"
-              key={outcome.side}
+              key={side.coin}
             >
-              <span>{outcome.side}</span>
-              <strong>{outcome.price}</strong>
+              <span>{side.label}</span>
+              <strong>{formatPrice(side.price)}</strong>
+              <small>{side.coin}</small>
             </article>
           ))}
         </div>
+      </section>
+
+      <section className="detail-section">
+        <h3>Market spec</h3>
+        <p className="market-spec">{market.description}</p>
       </section>
 
       <section className="detail-section">

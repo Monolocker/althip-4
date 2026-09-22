@@ -1,14 +1,18 @@
-export type OutcomeSide = "YES" | "NO"
-
-export interface MarketOutcome {
-    side: OutcomeSide
-    price: number
+export interface OutcomeSide {
+    index: number
+    label: string
+    coin: string
+    price: number | null
 }
 
 export interface OutcomeMarket {
     id: string
+    name: string
     question: string
-    status: "open" | "closed"
-    closesAt: string
-    outcomes: MarketOutcome[]
+    description: string
+    status: "open" | "settled"
+    closesAt: string | null
+    quoteToken: string
+    venue: string
+    sides: OutcomeSide[]
 }

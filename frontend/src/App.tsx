@@ -4,12 +4,31 @@ import MarketDetail from "./components/MarketDetail"
 import MarketList from "./components/MarketList"
 import type { OutcomeMarket } from "./types/market"
 
+function sortMarkets(markets: OutcomeMarket[]): OutcomeMarket[] {
+  return [...markets].sort((a, b) => {
+    const aParsed = a.question !== a.description
+    const bParsed = b.question !== b.description
+    if (aParsed !== bParsed) {
+      return aParsed ? -1 : 1
+    }
+
+    if (a.closesAt !== null && b.closesAt !== null) {
+      return a.closesAt.localeCompare(b.closesAt)
+    }
+    if (a.closesAt !== null) return -1
+    if (b.closesAt !== null) return 1
+    return 0
+  })
+}
+
 function App() {
   const [markets, setMarkets] = useState<OutcomeMarket[]>([])
   const [selectedMarketId, setSelectedMarketId] =
     useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const displayMarkets = sortMarkets(markets)
 
   const selectedMarket =
     markets.find(
@@ -28,15 +47,15 @@ function App() {
         }
       } catch (caughtError) {
         if (!ignore) {
-          const message = 
+          const message =
             caughtError instanceof Error
               ? caughtError.message
               : "An unknown error occurred"
 
-              setError(message)
+          setError(message)
         }
       } finally {
-        if(!ignore) {
+        if (!ignore) {
           setIsLoading(false)
         }
       }
@@ -54,7 +73,7 @@ function App() {
   }
 
   let workspaceTitle = "Select a market"
-  let workspaceMessage = 
+  let workspaceMessage =
     "Choose a market from the list to inspect its details"
 
   if (isLoading) {
@@ -85,7 +104,7 @@ function App() {
             </div>
           ) : (
             <MarketList
-              markets={markets}
+              markets={displayMarkets}
               selectedMarketId={selectedMarketId}
               onSelect={handleSelectMarket}
             />

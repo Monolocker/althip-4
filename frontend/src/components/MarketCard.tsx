@@ -1,4 +1,5 @@
 import type { OutcomeMarket } from '../types/market'
+import { formatPrice } from '../utils/format'
 
 interface MarketCardProps {
   market: OutcomeMarket
@@ -28,13 +29,13 @@ function MarketCard({
       </div>
 
       <div className="market-card-outcomes">
-        {market.outcomes.map((outcome) => (
+        {market.sides.map((side) => (
           <div
             className="market-card-outcome"
-            key={outcome.side}
+            key={side.coin}
           >
-            <span>{outcome.side}</span>
-            <strong>{outcome.price}</strong>
+            <span>{side.label}</span>
+            <strong>{formatPrice(side.price)}</strong>
           </div>
         ))}
       </div>
