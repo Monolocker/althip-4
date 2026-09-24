@@ -76,10 +76,12 @@ button {
 
 .market-list-items {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.75rem;
 }
 
 .market-card {
+  min-width: 0;
   padding: 1rem;
   border: 1px solid #ddd;
   border-radius: 8px;
@@ -94,6 +96,7 @@ button {
   margin: 0.5rem 0 1rem;
   font-size: 1rem;
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .market-status {
@@ -203,6 +206,19 @@ button {
 
 .detail-outcome-card strong {
   font-size: 1.4rem;
+}
+
+.detail-outcome-card small {
+  color: #777;
+  font-size: 0.8rem;
+}
+
+.market-spec {
+  margin: 0;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.85rem;
+  color: #444;
+  overflow-wrap: anywhere;
 }
 
 .section-heading {
