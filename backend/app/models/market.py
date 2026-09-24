@@ -1,6 +1,6 @@
 """Application's internal domain models as Pydantic classes for outcome markets
 
-Essentially, the backend twin of frontend/src/types/market.ts. These models are 
+Essentially, the backend version of frontend/src/types/market.ts. These models are 
 what the rest of the backend (and frontend, via JSON) depend on. Purposely, the 
 models do not mirror HL's raw response shapes. The normalization layer converts
 between the two (pydantic domain models and raw HL response shapes).
@@ -33,3 +33,24 @@ class OutcomeMarket(BaseModel):
     quote_token: str = Field(default="USDC", alias="quoteToken")
     venue: str = ""
     sides: list[OutcomeSide]
+
+class QuestionMembership(BaseModel):
+    """How an outcome relates to a multi-outcome question, if at all"""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    question_id: str = Field(alias="questionId")
+    name: str
+    description: str
+    is_fallback: bool = Field(alias="isFallback")
+    # Other outcomes belonging to the same question, excluding this one.
+    sibling_ids: list[str] = Field(alias="siblingIds")
+
+class OutcomeMarketDetail(OutcomeMarket):
+    """An OutcomeMarket plus everything else we can derive for one market."""
+
+    spec: dict[str, str]  # the description string, parsed into fields
+    deployer: str | None = None  # deployer address for this market's venue
+    question_group: QuestionMembership | None = Field(
+        default=None, alias="questionGroup"
+    )

@@ -79,7 +79,7 @@ class HyperliquidClient:
             # Top-level error, Network-level failure: DNS, connect timeout, read timeout, etc
             raise HyperliquidError(
                 f"Network error calling Hyperliquid for request "
-                f"{body.get("type")!r}: {exc}"
+                f"{body.get('type')!r}: {type(exc).__name__}: {exc}"
             ) from exc
         except ValueError as exc:
             # response.json failed: the body was not valid JSON

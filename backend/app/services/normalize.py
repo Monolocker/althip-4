@@ -4,7 +4,12 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from app.models.market import OutcomeMarket, OutcomeSide
+from app.models.market import (
+    OutcomeMarket, 
+    OutcomeMarketDetail,
+    OutcomeSide,
+    QuestionMembership,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +132,56 @@ def normalize_markets(
                 "Skipping unnormalizable outcome: %r", raw.get("outcome")
             )
     return markets
+
+def find_question_membership(
+    outcome_id: int, meta: dict[str, Any]
+) -> QuestionMembership | None:
+    """Find the question this outcome belongs to, if any.
+
+    Questions reference their outcomes by id (namedOutcomes plus a
+    fallbackOutcome); outcomes do not point back at their question,
+    so we search from the question side.
+    """
+    for question in meta.get("questions", []):
+        named = [int(x) for x in question.get("namedOutcomes", [])]
+        fallback = question.get("fallbackOutcome")
+        fallback_id = int(fallback) if fallback is not None else None
+        members = named + ([fallback_id] if fallback_id is not None else [])
+
+        if outcome_id in members:
+            return QuestionMembership(
+                question_id=str(question.get("question")),
+                name=question.get("name", ""),
+                description=question.get("description", ""),
+                is_fallback=(outcome_id == fallback_id),
+                sibling_ids=[str(m) for m in members if m != outcome_id],
+            )
+    return None
+
+
+def find_deployer(venue: str, meta: dict[str, Any]) -> str | None:
+    """Look up the deployer address for a venue from outcomeMeta."""
+    for deployer in meta.get("deployers", []):
+        if deployer.get("venue") == venue:
+            return deployer.get("deployer")
+    return None
+
+
+def normalize_market_detail(
+    raw: dict[str, Any], mids: dict[str, str], meta: dict[str, Any]
+) -> OutcomeMarketDetail:
+    """Build the rich detail model for one outcome.
+
+    Reuses normalize_outcome for the base fields, then layers on the
+    derived data that only a detail view needs.
+    """
+    base = normalize_outcome(raw, mids)
+    return OutcomeMarketDetail(
+        **base.model_dump(),
+        spec=parse_spec(base.description),
+        deployer=find_deployer(base.venue, meta),
+        question_group=find_question_membership(int(base.id), meta),
+    )
 
 
 if __name__ == "__main__":
