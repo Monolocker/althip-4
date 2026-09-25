@@ -58,6 +58,25 @@ class HyperliquidClient:
             )
         return data
     
+    async def fetch_settled_outcome(
+        self, outcome_id: int
+    ) -> dict[str, Any] | None: 
+        """Fetch settlement info for an outcome that is no longer live.
+
+        Verified live shape:
+        {"spec": {<the original outcome object>},
+         "settleFraction": "1.0", "details": "template"}
+
+        Returns None when the response carries no settlement record.
+        """
+        data = await self._post_info(
+            {"type": "settledOutcome", "outcome": outcome_id}
+        )
+        if not isinstance(data, dict) or "spec" not in data:
+            return None
+        return data
+        
+    
     async def _post_info(self, body: dict[str, Any]) -> Any:
         """POST a request body to the info endpoint and return parsed JSON"""
         try:

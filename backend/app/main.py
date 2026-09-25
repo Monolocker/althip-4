@@ -11,7 +11,11 @@ from pydantic import BaseModel
 
 from app.models.market import OutcomeMarket, OutcomeMarketDetail
 from app.services.hyperliquid import HyperliquidClient, HyperliquidError
-from app.services.normalize import normalize_market_detail, normalize_markets
+from app.services.normalize import (
+    normalize_market_detail,
+    normalize_markets,
+    normalize_settled_detail,
+)
 
 # One fetch of outcomeMeta costs rate-limit weight 20 (budget: 1200/min).
 # Caching for 15s caps us at ~88 weight/min no matter how many browser
@@ -45,6 +49,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.http = httpx.AsyncClient()
     app.state.hyperliquid = HyperliquidClient(app.state.http)
     app.state.snapshot = None
+    # Settled markets never change, so this cache has no expiry.
+    app.state.settled = {}
     yield
     await app.state.http.aclose()
 
@@ -102,9 +108,36 @@ async def markets() -> list[OutcomeMarket]:
 @app.get("/markets/{market_id}")
 async def market_detail(market_id: str) -> OutcomeMarketDetail:
     snapshot = await get_snapshot()
+
+    # 1. Live market: served from the snapshot.
     raw = snapshot.raw_by_id.get(market_id)
-    if raw is None:
+    if raw is not None:
+        return normalize_market_detail(raw, snapshot.mids, snapshot.meta)
+
+    # 2. Previously fetched settled market: served from the permanent cache.
+    settled_cache: dict[str, OutcomeMarketDetail] = app.state.settled
+    cached = settled_cache.get(market_id)
+    if cached is not None:
+        return cached
+
+    # 3. Not live, not cached. Only ask Hyperliquid if the id could exist;
+    #    a non-numeric id is not worth a weight-20 upstream request.
+    if not market_id.isdigit():
         raise HTTPException(
             status_code=404, detail=f"Market {market_id} not found"
         )
-    return normalize_market_detail(raw, snapshot.mids, snapshot.meta)
+
+    client: HyperliquidClient = app.state.hyperliquid
+    try:
+        settled = await client.fetch_settled_outcome(int(market_id))
+    except HyperliquidError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    if settled is None:
+        raise HTTPException(
+            status_code=404, detail=f"Market {market_id} not found"
+        )
+
+    detail = normalize_settled_detail(settled, snapshot.meta)
+    settled_cache[market_id] = detail
+    return detail

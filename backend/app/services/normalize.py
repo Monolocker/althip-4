@@ -9,6 +9,7 @@ from app.models.market import (
     OutcomeMarketDetail,
     OutcomeSide,
     QuestionMembership,
+    Settlement,
 )
 
 logger = logging.getLogger(__name__)
@@ -167,21 +168,55 @@ def find_deployer(venue: str, meta: dict[str, Any]) -> str | None:
     return None
 
 
-def normalize_market_detail(
-    raw: dict[str, Any], mids: dict[str, str], meta: dict[str, Any]
+def _build_detail(
+    base: OutcomeMarket,
+    meta: dict[str, Any],
+    settlement: Settlement | None = None,
 ) -> OutcomeMarketDetail:
-    """Build the rich detail model for one outcome.
-
-    Reuses normalize_outcome for the base fields, then layers on the
-    derived data that only a detail view needs.
-    """
-    base = normalize_outcome(raw, mids)
+    """Assemble the detail model from a base market plus derived data."""
     return OutcomeMarketDetail(
         **base.model_dump(),
         spec=parse_spec(base.description),
         deployer=find_deployer(base.venue, meta),
         question_group=find_question_membership(int(base.id), meta),
+        settlement=settlement,
     )
+
+def normalize_market_detail(
+    raw: dict[str, Any], mids: dict[str, str], meta: dict[str, Any]
+) -> OutcomeMarketDetail:
+    """Build the rich detail model for one live outcome."""
+    return _build_detail(normalize_outcome(raw, mids), meta)
+
+def normalize_settled_detail(
+    settled: dict[str, Any], meta: dict[str, Any]
+) -> OutcomeMarketDetail:
+    """Build the detail model for the settled outcome
+    
+    settledOutcome embeds the original outcome object as 'spec',
+    so same normalizer applies. No live mids for settled markets, 
+    both prices are None.
+    """
+    base = normalize_outcome(settled["spec"], mids={})
+    base = base.model_copy(update={"status": "settled"})
+
+    try:
+        fraction: float | None = float(settled.get("settleFraction"))
+    except (TypeError, ValueError):
+        fraction = None
+
+    winner: int | None = None
+    if fraction == 1.0:
+        winner = 0
+    elif fraction == 0.0:
+        winner = 1
+
+    settlement = Settlement(
+        settle_fraction=fraction,
+        details=str(settled.get("details", "")),
+        winning_side_index=winner,
+    )
+    return _build_detail(base, meta, settlement)
 
 
 if __name__ == "__main__":
