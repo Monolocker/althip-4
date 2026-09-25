@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react"
-import { fetchMarkets } from "./api/markets"
+import { fetchMarketDetail, fetchMarkets } from "./api/markets"
 import MarketDetail from "./components/MarketDetail"
 import MarketList from "./components/MarketList"
-import type { OutcomeMarket } from "./types/market"
+import type { OutcomeMarket, OutcomeMarketDetail } from "./types/market"
 
 function sortMarkets(markets: OutcomeMarket[]): OutcomeMarket[] {
   return [...markets].sort((a, b) => {
@@ -21,12 +21,21 @@ function sortMarkets(markets: OutcomeMarket[]): OutcomeMarket[] {
   })
 }
 
+function errorMessage(caughtError: unknown): string {
+  return caughtError instanceof Error
+    ? caughtError.message
+    : "An unknown error occurred"
+}
+
 function App() {
   const [markets, setMarkets] = useState<OutcomeMarket[]>([])
   const [selectedMarketId, setSelectedMarketId] =
     useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const [detail, setDetail] = useState<OutcomeMarketDetail | null>(null)
+  const [detailError, setDetailError] = useState<string | null>(null)
 
   const displayMarkets = sortMarkets(markets)
 
@@ -47,12 +56,7 @@ function App() {
         }
       } catch (caughtError) {
         if (!ignore) {
-          const message =
-            caughtError instanceof Error
-              ? caughtError.message
-              : "An unknown error occurred"
-
-          setError(message)
+          setError(errorMessage(caughtError))
         }
       } finally {
         if (!ignore) {
@@ -67,6 +71,39 @@ function App() {
       ignore = true
     }
   }, [])
+
+  useEffect(() => {
+    // Whenever the selection changes, drop the previous market's detail
+    // so it can never be shown under the new market's heading.
+    setDetail(null)
+    setDetailError(null)
+
+    if (selectedMarketId === null) {
+      return
+    }
+
+    let ignore = false
+
+    async function loadDetail(marketId: string) {
+      try {
+        const fetchedDetail = await fetchMarketDetail(marketId)
+
+        if (!ignore) {
+          setDetail(fetchedDetail)
+        }
+      } catch (caughtError) {
+        if (!ignore) {
+          setDetailError(errorMessage(caughtError))
+        }
+      }
+    }
+
+    loadDetail(selectedMarketId)
+
+    return () => {
+      ignore = true
+    }
+  }, [selectedMarketId])
 
   function handleSelectMarket(marketId: string) {
     setSelectedMarketId(marketId)
@@ -113,7 +150,11 @@ function App() {
 
         <section className="market-workspace">
           {selectedMarket ? (
-            <MarketDetail market={selectedMarket} />
+            <MarketDetail
+              market={selectedMarket}
+              detail={detail}
+              detailError={detailError}
+            />
           ) : (
             <div className="market-detail-empty">
               <h2>{workspaceTitle}</h2>

@@ -16,3 +16,24 @@ export interface OutcomeMarket {
     venue: string
     sides: OutcomeSide[]
 }
+
+export interface QuestionMembership {
+    questionId: string
+    name: string
+    description: string
+    isFallback: boolean
+    siblingIds: string[]
+}
+
+export interface Settlement {
+    settleFraction: number | null
+    details: string
+    winningSideIndex: number | null
+  }
+  
+  export interface OutcomeMarketDetail extends OutcomeMarket {
+    spec: Record<string, string>
+    deployer: string | null
+    questionGroup: QuestionMembership | null
+    settlement: Settlement | null
+  }

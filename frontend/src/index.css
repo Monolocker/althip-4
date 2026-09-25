@@ -221,6 +221,27 @@ button {
   overflow-wrap: anywhere;
 }
 
+.detail-note {
+  margin: 1.5rem 0 0;
+  color: #777;
+  font-size: 0.9rem;
+}
+
+.detail-note--error {
+  color: #8a1c1c;
+}
+
+.settlement-banner {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  background: #eef6ee;
+  border: 1px solid #b7d9b7;
+  border-radius: 8px;
+}
+
 .section-heading {
   display: flex;
   align-items: center;
