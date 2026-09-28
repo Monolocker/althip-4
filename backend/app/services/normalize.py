@@ -12,6 +12,9 @@ from app.models.market import (
     Settlement,
 )
 
+from app.models.book import BookLevel, OrderBook
+
+
 logger = logging.getLogger(__name__)
 
 def parse_spec(description: str) -> dict[str, str]:
@@ -217,6 +220,53 @@ def normalize_settled_detail(
         winning_side_index=winner,
     )
     return _build_detail(base, meta, settlement)
+
+def _parse_levels(raw_levels: Any) -> list[BookLevel]:
+    """Convert raw {"px", "sz", "n"} dicts into BookLevels, skipping bad ones"""
+    levels: list[BookLevel] = []
+    for raw in raw_levels or []:
+        try:
+            levels.append(
+                BookLevel(
+                    price=float(raw["px"]),
+                    size=float(raw["sz"]),
+                    orders=int(raw["n"]),
+                )
+            )
+        except (KeyError, TypeError, ValueError):
+            logger.warning("Skipping malformed book level: %r", raw)
+    return levels
+
+def normalize_order_book(raw: dict[str, Any], side_index: int) -> OrderBook:
+    """Convert a raw l2Book response into domain's OrderBook model.
+
+    Hyperliquid's `levels` is [bids, asks]. Both are sorted explicitly
+    (best-first) rather than trusting upstream ordering.
+    """
+    levels = raw.get("levels") or [[], []]
+    bids = sorted(_parse_levels(levels[0]), key=lambda lvl: lvl.price, reverse=True)
+    asks = sorted(_parse_levels(levels[1]), key=lambda lvl: lvl.price)
+
+    best_bid = bids[0].price if bids else None
+    best_ask = asks[0].price if asks else None
+    spread = (
+        best_ask - best_bid
+        if best_bid is not None and best_ask is not None
+        else None
+    )
+
+    return OrderBook(
+        coin=str(raw.get("coin", "")),
+        side_index=side_index,
+        fetched_at=datetime.fromtimestamp(
+            int(raw.get("time", 0)) / 1000, tz=timezone.utc
+        ),
+        bids=bids,
+        asks=asks,
+        best_bid=best_bid,
+        best_ask=best_ask,
+        spread=spread,
+    )
 
 
 if __name__ == "__main__":

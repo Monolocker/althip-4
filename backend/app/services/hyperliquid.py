@@ -75,7 +75,23 @@ class HyperliquidClient:
         if not isinstance(data, dict) or "spec" not in data:
             return None
         return data
-        
+    
+    async def fetch_l2_book(self, coin: str) -> dict[str, Any]:
+        """Fetch an order book snapshot for one coin, such as "#12100"
+
+        Verified live shape:
+        {"coin": "#12100", "time": 1788224478920,
+         "levels": [[{"px": "0.05", "sz": "11487.0", "n": 6}, ...],     # bids
+                    [{"px": "0.06", "sz": "500.0", "n": 1}, ...]]}      # asks
+        n = number of levels. Up to 20 levels per side
+        """
+        data = await self._post_info({"type": "l2Book", "coin": coin})
+        if not isinstance(data, dict) or "levels" not in data:
+            raise HyperliquidError(
+                f"Unexepected l2Book response shape for {coin!r}: "
+                f"{type(data).__name__}"
+            )
+        return data
     
     async def _post_info(self, body: dict[str, Any]) -> Any:
         """POST a request body to the info endpoint and return parsed JSON"""

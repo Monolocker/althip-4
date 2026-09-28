@@ -5,15 +5,17 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from app.models.book import OrderBook
 from app.models.market import OutcomeMarket, OutcomeMarketDetail
 from app.services.hyperliquid import HyperliquidClient, HyperliquidError
 from app.services.normalize import (
     normalize_market_detail,
     normalize_markets,
+    normalize_order_book,
     normalize_settled_detail,
 )
 
@@ -22,6 +24,9 @@ from app.services.normalize import (
 # tabs are refreshing, and market metadata rarely changes that fast.
 CACHE_TTL_SECONDS = 15.0
 
+# Order books are constantly changing, but rapid re-clicks on the same markets
+# shouldn't each cost an upstream request. l2Book info request is weight 2
+BOOK_TTL_SECONDS = 3.0
 
 class Snapshot:
     """One consistent view of Hyperliquid data, fetched at a single moment.
@@ -51,6 +56,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.snapshot = None
     # Settled markets never change, so this cache has no expiry.
     app.state.settled = {}
+    # coin -> (fetched_at_monotonic, OrderBook)
+    app.state.books = {}    
     yield
     await app.state.http.aclose()
 
@@ -141,3 +148,33 @@ async def market_detail(market_id: str) -> OutcomeMarketDetail:
     detail = normalize_settled_detail(settled, snapshot.meta)
     settled_cache[market_id] = detail
     return detail
+
+@app.get("/markets/{market_id}/book")
+async def market_book(
+    market_id: str,
+    side: int = Query(default=0, ge=0, le=1),
+) -> OrderBook:
+    snapshot = await get_snapshot()
+    if market_id not in snapshot.raw_by_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Market {market_id} is not a live market",
+        )
+
+    coin = f"#{10 * int(market_id) + side}"
+
+    books: dict[str, tuple[float, OrderBook]] = app.state.books
+    cached = books.get(coin)
+    now = time.monotonic()
+    if cached is not None and now - cached[0] < BOOK_TTL_SECONDS:
+        return cached[1]
+
+    client: HyperliquidClient = app.state.hyperliquid
+    try:
+        raw_book = await client.fetch_l2_book(coin)
+    except HyperliquidError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    book = normalize_order_book(raw_book, side)
+    books[coin] = (now, book)
+    return book
