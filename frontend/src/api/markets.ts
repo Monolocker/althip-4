@@ -1,3 +1,4 @@
+import type { OrderBook } from '../types/book'
 import type {
   OutcomeMarket,
   OutcomeMarketDetail,
@@ -27,5 +28,15 @@ export async function fetchMarketDetail(
   return requestJson<OutcomeMarketDetail>(
     `/markets/${encodeURIComponent(marketId)}`,
     `market ${marketId}`,
+  )
+}
+
+export async function fetchOrderBook(
+  marketId: string,
+  sideIndex: number,
+): Promise<OrderBook> {
+  return requestJson<OrderBook>(
+    `/markets/${encodeURIComponent(marketId)}/book?side=${sideIndex}`,
+    `order book for market ${marketId}`,
   )
 }

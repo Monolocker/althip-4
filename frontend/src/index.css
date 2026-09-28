@@ -242,6 +242,59 @@ button {
   border-radius: 8px;
 }
 
+.side-toggle {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.side-toggle-button {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.side-toggle-button--active {
+  background: #1a1a1a;
+  border-color: #1a1a1a;
+  color: #fff;
+}
+
+.book-summary {
+  margin-bottom: 1rem;
+}
+
+.order-book {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.book-side h4 {
+  margin: 0 0 0.5rem;
+}
+
+.book-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.book-table th,
+.book-table td {
+  padding: 0.3rem 0.5rem;
+  text-align: right;
+  border-bottom: 1px solid #eee;
+}
+
+.book-table th:first-child,
+.book-table td:first-child {
+  text-align: left;
+}
+
 .section-heading {
   display: flex;
   align-items: center;

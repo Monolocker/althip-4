@@ -250,7 +250,7 @@ def normalize_order_book(raw: dict[str, Any], side_index: int) -> OrderBook:
     best_bid = bids[0].price if bids else None
     best_ask = asks[0].price if asks else None
     spread = (
-        best_ask - best_bid
+        round(best_ask - best_bid, 6)
         if best_bid is not None and best_ask is not None
         else None
     )

@@ -3,6 +3,7 @@ import type {
   OutcomeMarketDetail,
 } from '../types/market'
 import { formatCloseTime, formatPrice } from '../utils/format'
+import OrderBookPanel from './OrderBookPanel'
 
 interface MarketDetailProps {
   market: OutcomeMarket
@@ -140,24 +141,12 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
         </section>
       )}
 
-      <section className="detail-section">
-        <div className="section-heading">
-          <h3>Order book</h3>
-          <span>Placeholder</span>
-        </div>
-
-        <div className="order-book-placeholder">
-          <div>
-            <h4>Bids</h4>
-            <p>No live order book data yet.</p>
-          </div>
-
-          <div>
-            <h4>Asks</h4>
-            <p>No live order book data yet.</p>
-          </div>
-        </div>
-      </section>
+      <OrderBookPanel
+        key={market.id}
+        marketId={market.id}
+        sides={market.sides}
+        isSettled={market.status === 'settled'}
+        />
     </section>
   )
 }
