@@ -17,6 +17,10 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
     settlement !== null && settlement.winningSideIndex !== null
       ? market.sides[settlement.winningSideIndex] ?? null
       : null
+      // the detail response is fresher than the list item:
+      // a market can settle between page load and selection
+      const status = detail?.status ?? market.status
+      const isSettled = status === "settled"
 
   return (
     <section className="market-detail">
@@ -39,7 +43,7 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
       <dl className="market-metadata">
         <div>
           <dt>Status</dt>
-          <dd>{market.status}</dd>
+          <dd>{status}</dd>
         </div>
 
         <div>
@@ -145,7 +149,7 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
         key={market.id}
         marketId={market.id}
         sides={market.sides}
-        isSettled={market.status === 'settled'}
+        isSettled={isSettled}
         />
     </section>
   )
