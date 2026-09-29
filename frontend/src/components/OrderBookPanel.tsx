@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { subscribeToOrderBook } from '../api/hlSocket'
 import { fetchOrderBook } from '../api/markets'
 import type { BookLevel, OrderBook } from '../types/book'
 import type { OutcomeSide } from '../types/market'
@@ -51,6 +52,9 @@ function OrderBookPanel({ marketId, sides, isSettled }: OrderBookPanelProps) {
   const [book, setBook] = useState<OrderBook | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const activeSide = sides[sideIndex] ?? null
+  const activeCoin = activeSide?.coin ?? null
+
   useEffect(() => {
     setBook(null)
     setError(null)
@@ -86,7 +90,33 @@ function OrderBookPanel({ marketId, sides, isSettled }: OrderBookPanelProps) {
     }
   }, [marketId, sideIndex, isSettled])
 
-  const activeSide = sides[sideIndex] ?? null
+  // Milestone 13: live updates are logged only. Milestone 14 applies them.
+  useEffect(() => {
+    if (isSettled || activeCoin === null) {
+      return
+    }
+
+    console.log(`[ws] subscribing to ${activeCoin}`)
+
+    const unsubscribe = subscribeToOrderBook(activeCoin, sideIndex, {
+      onBook: (liveBook) => {
+        console.log(
+          `[ws] ${activeCoin} update: best bid ${liveBook.bestBid} / ` +
+            `best ask ${liveBook.bestAsk} ` +
+            `(${liveBook.bids.length} bids, ${liveBook.asks.length} asks) ` +
+            `at ${liveBook.fetchedAt}`,
+        )
+      },
+      onStatus: (status, detail) => {
+        console.log(`[ws] ${activeCoin} ${status}${detail ? ` (${detail})` : ''}`)
+      },
+    })
+
+    return () => {
+      console.log(`[ws] unsubscribing from ${activeCoin}`)
+      unsubscribe()
+    }
+  }, [activeCoin, sideIndex, isSettled])
 
   return (
     <section className="detail-section">
