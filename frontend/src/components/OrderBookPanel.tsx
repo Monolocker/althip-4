@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { subscribeToOrderBook } from '../api/hlSocket'
+import { subscribeToOrderBook, type SocketStatus } from '../api/hlSocket'
 import { fetchOrderBook } from '../api/markets'
 import type { BookLevel, OrderBook } from '../types/book'
 import type { OutcomeSide } from '../types/market'
@@ -41,6 +41,46 @@ function BookSideTable({ title, levels }: BookSideTableProps) {
   )
 }
 
+type BookSource = 'snapshot' | 'live'
+
+interface LiveBadgeProps {
+  socketStatus: SocketStatus | 'idle'
+  bookSource: BookSource | null
+  updatedAt: string | null
+}
+
+function LiveBadge({ socketStatus, bookSource, updatedAt }: LiveBadgeProps) {
+  let label = 'Idle'
+  let tone = 'idle'
+
+  if (socketStatus === 'connecting') {
+    label = 'Connecting'
+    tone = 'pending'
+  } else if (socketStatus === 'open') {
+    label = bookSource === 'live' ? 'Live' : 'Connected'
+    tone = bookSource === 'live' ? 'live' : 'pending'
+  } else if (socketStatus === 'closed') {
+    label = bookSource !== null ? 'Disconnected — showing last data' : 'Disconnected'
+    tone = 'down'
+  } else if (socketStatus === 'error') {
+    label = 'Connection error'
+    tone = 'down'
+  }
+
+  const updatedTime =
+    updatedAt !== null ? new Date(updatedAt).toLocaleTimeString() : null
+
+  return (
+    <div className="live-badge">
+      <span className={`live-dot live-dot--${tone}`} aria-hidden="true" />
+      <span>{label}</span>
+      {updatedTime !== null && (
+        <span className="live-updated">· updated {updatedTime}</span>
+      )}
+    </div>
+  )
+}
+
 interface OrderBookPanelProps {
   marketId: string
   sides: OutcomeSide[]
@@ -50,14 +90,19 @@ interface OrderBookPanelProps {
 function OrderBookPanel({ marketId, sides, isSettled }: OrderBookPanelProps) {
   const [sideIndex, setSideIndex] = useState(0)
   const [book, setBook] = useState<OrderBook | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [bookSource, setBookSource] = useState<BookSource | null>(null)
+  const [socketStatus, setSocketStatus] = useState<SocketStatus | 'idle'>('idle')
+  const [snapshotError, setSnapshotError] = useState<string | null>(null)
 
   const activeSide = sides[sideIndex] ?? null
   const activeCoin = activeSide?.coin ?? null
 
+  // Source 1: HTTP snapshot via our backend. Fast first paint, and the
+  // fallback if the socket cannot connect. Never overwrites a live book.
   useEffect(() => {
     setBook(null)
-    setError(null)
+    setBookSource(null)
+    setSnapshotError(null)
 
     if (isSettled) {
       return
@@ -65,16 +110,17 @@ function OrderBookPanel({ marketId, sides, isSettled }: OrderBookPanelProps) {
 
     let ignore = false
 
-    async function loadBook() {
+    async function loadSnapshot() {
       try {
-        const fetchedBook = await fetchOrderBook(marketId, sideIndex)
+        const snapshot = await fetchOrderBook(marketId, sideIndex)
 
         if (!ignore) {
-          setBook(fetchedBook)
+          setBook((current) => current ?? snapshot)
+          setBookSource((current) => current ?? 'snapshot')
         }
       } catch (caughtError) {
         if (!ignore) {
-          setError(
+          setSnapshotError(
             caughtError instanceof Error
               ? caughtError.message
               : 'An unknown error occurred',
@@ -83,37 +129,38 @@ function OrderBookPanel({ marketId, sides, isSettled }: OrderBookPanelProps) {
       }
     }
 
-    loadBook()
+    loadSnapshot()
 
     return () => {
       ignore = true
     }
   }, [marketId, sideIndex, isSettled])
 
-  // Milestone 13: live updates are logged only. Milestone 14 applies them.
+  // Source 2: live snapshots over WebSocket. Each message is a complete
+  // book, so applying an update means replacing the previous one.
   useEffect(() => {
+    setSocketStatus('idle')
+
     if (isSettled || activeCoin === null) {
       return
     }
 
-    console.log(`[ws] subscribing to ${activeCoin}`)
+    let active = true
 
     const unsubscribe = subscribeToOrderBook(activeCoin, sideIndex, {
       onBook: (liveBook) => {
-        console.log(
-          `[ws] ${activeCoin} update: best bid ${liveBook.bestBid} / ` +
-            `best ask ${liveBook.bestAsk} ` +
-            `(${liveBook.bids.length} bids, ${liveBook.asks.length} asks) ` +
-            `at ${liveBook.fetchedAt}`,
-        )
+        if (!active) return
+        setBook(liveBook)
+        setBookSource('live')
       },
-      onStatus: (status, detail) => {
-        console.log(`[ws] ${activeCoin} ${status}${detail ? ` (${detail})` : ''}`)
+      onStatus: (status) => {
+        if (!active) return
+        setSocketStatus(status)
       },
     })
 
     return () => {
-      console.log(`[ws] unsubscribing from ${activeCoin}`)
+      active = false
       unsubscribe()
     }
   }, [activeCoin, sideIndex, isSettled])
@@ -142,14 +189,24 @@ function OrderBookPanel({ marketId, sides, isSettled }: OrderBookPanelProps) {
         </div>
       </div>
 
+      {!isSettled && (
+        <LiveBadge
+          socketStatus={socketStatus}
+          bookSource={bookSource}
+          updatedAt={book?.fetchedAt ?? null}
+        />
+      )}
+
       {isSettled ? (
         <p className="detail-note">Settled markets have no order book.</p>
-      ) : error !== null ? (
-        <p className="detail-note detail-note--error">
-          Could not load order book: {error}
-        </p>
       ) : book === null ? (
-        <p className="detail-note">Loading order book…</p>
+        snapshotError !== null ? (
+          <p className="detail-note detail-note--error">
+            Could not load order book: {snapshotError}
+          </p>
+        ) : (
+          <p className="detail-note">Loading order book…</p>
+        )
       ) : (
         <>
           <dl className="market-metadata book-summary">

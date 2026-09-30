@@ -295,6 +295,38 @@ button {
   text-align: left;
 }
 
+.live-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.5rem 0 1rem;
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.live-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: #bbb;
+}
+
+.live-dot--live {
+  background: #2e9e4f;
+}
+
+.live-dot--pending {
+  background: #d9a400;
+}
+
+.live-dot--down {
+  background: #c43a3a;
+}
+
+.live-updated {
+  color: #888;
+}
+
 .section-heading {
   display: flex;
   align-items: center;
