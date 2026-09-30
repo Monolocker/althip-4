@@ -45,11 +45,12 @@ type BookSource = 'snapshot' | 'live'
 
 interface LiveBadgeProps {
   socketStatus: SocketStatus | 'idle'
+  attempt: number
   bookSource: BookSource | null
   updatedAt: string | null
 }
 
-function LiveBadge({ socketStatus, bookSource, updatedAt }: LiveBadgeProps) {
+function LiveBadge({ socketStatus, attempt, bookSource, updatedAt }: LiveBadgeProps) {
   let label = 'Idle'
   let tone = 'idle'
 
@@ -59,11 +60,11 @@ function LiveBadge({ socketStatus, bookSource, updatedAt }: LiveBadgeProps) {
   } else if (socketStatus === 'open') {
     label = bookSource === 'live' ? 'Live' : 'Connected'
     tone = bookSource === 'live' ? 'live' : 'pending'
-  } else if (socketStatus === 'closed') {
-    label = bookSource !== null ? 'Disconnected — showing last data' : 'Disconnected'
-    tone = 'down'
-  } else if (socketStatus === 'error') {
-    label = 'Connection error'
+  } else if (socketStatus === 'reconnecting') {
+    label =
+      bookSource !== null
+        ? `Reconnecting (attempt ${attempt}) — showing last data`
+        : `Reconnecting (attempt ${attempt})`
     tone = 'down'
   }
 
@@ -92,10 +93,12 @@ function OrderBookPanel({ marketId, sides, isSettled }: OrderBookPanelProps) {
   const [book, setBook] = useState<OrderBook | null>(null)
   const [bookSource, setBookSource] = useState<BookSource | null>(null)
   const [socketStatus, setSocketStatus] = useState<SocketStatus | 'idle'>('idle')
+  const [reconnectAttempt, setReconnectAttempt] = useState(0)
   const [snapshotError, setSnapshotError] = useState<string | null>(null)
 
   const activeSide = sides[sideIndex] ?? null
   const activeCoin = activeSide?.coin ?? null
+  const isReconnecting = socketStatus === 'reconnecting'
 
   // Source 1: HTTP snapshot via our backend. Fast first paint, and the
   // fallback if the socket cannot connect. Never overwrites a live book.
@@ -136,33 +139,28 @@ function OrderBookPanel({ marketId, sides, isSettled }: OrderBookPanelProps) {
     }
   }, [marketId, sideIndex, isSettled])
 
-  // Source 2: live snapshots over WebSocket. Each message is a complete
-  // book, so applying an update means replacing the previous one.
+  // Source 2: live snapshots over WebSocket. The adapter handles
+  // reconnection and guarantees no callbacks after unsubscribe.
   useEffect(() => {
     setSocketStatus('idle')
+    setReconnectAttempt(0)
 
     if (isSettled || activeCoin === null) {
       return
     }
 
-    let active = true
-
     const unsubscribe = subscribeToOrderBook(activeCoin, sideIndex, {
       onBook: (liveBook) => {
-        if (!active) return
         setBook(liveBook)
         setBookSource('live')
       },
-      onStatus: (status) => {
-        if (!active) return
+      onStatus: (status, attempt) => {
         setSocketStatus(status)
+        setReconnectAttempt(attempt)
       },
     })
 
-    return () => {
-      active = false
-      unsubscribe()
-    }
+    return unsubscribe
   }, [activeCoin, sideIndex, isSettled])
 
   return (
@@ -192,6 +190,7 @@ function OrderBookPanel({ marketId, sides, isSettled }: OrderBookPanelProps) {
       {!isSettled && (
         <LiveBadge
           socketStatus={socketStatus}
+          attempt={reconnectAttempt}
           bookSource={bookSource}
           updatedAt={book?.fetchedAt ?? null}
         />
@@ -208,7 +207,13 @@ function OrderBookPanel({ marketId, sides, isSettled }: OrderBookPanelProps) {
           <p className="detail-note">Loading order book…</p>
         )
       ) : (
-        <>
+        <div
+          className={
+            isReconnecting
+              ? 'order-book-body order-book-body--stale'
+              : 'order-book-body'
+          }
+        >
           <dl className="market-metadata book-summary">
             <div>
               <dt>Best bid</dt>
@@ -234,7 +239,7 @@ function OrderBookPanel({ marketId, sides, isSettled }: OrderBookPanelProps) {
               levels={book.asks}
             />
           </div>
-        </>
+        </div>
       )}
     </section>
   )

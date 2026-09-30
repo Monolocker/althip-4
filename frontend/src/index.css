@@ -327,6 +327,14 @@ button {
   color: #888;
 }
 
+.order-book-body {
+  transition: opacity 0.2s ease;
+}
+
+.order-book-body--stale {
+  opacity: 0.45;
+}
+
 .section-heading {
   display: flex;
   align-items: center;
