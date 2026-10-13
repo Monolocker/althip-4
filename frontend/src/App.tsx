@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react"
-import { fetchMarketDetail, fetchMarkets } from "./api/markets"
+import { useState } from "react"
+import { useMarketDetail, useMarkets } from "./api/queries"
 import MarketDetail from "./components/MarketDetail"
 import MarketList from "./components/MarketList"
-import type { OutcomeMarket, OutcomeMarketDetail } from "./types/market"
+import type { OutcomeMarket } from "./types/market"
 
 function sortMarkets(markets: OutcomeMarket[]): OutcomeMarket[] {
   return [...markets].sort((a, b) => {
@@ -21,89 +21,34 @@ function sortMarkets(markets: OutcomeMarket[]): OutcomeMarket[] {
   })
 }
 
-function errorMessage(caughtError: unknown): string {
-  return caughtError instanceof Error
-    ? caughtError.message
-    : "An unknown error occurred"
-}
-
 function App() {
-  const [markets, setMarkets] = useState<OutcomeMarket[]>([])
   const [selectedMarketId, setSelectedMarketId] =
     useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
 
-  const [detail, setDetail] = useState<OutcomeMarketDetail | null>(null)
-  const [detailError, setDetailError] = useState<string | null>(null)
+  const marketsQuery = useMarkets()
+  const detailQuery = useMarketDetail(selectedMarketId)
 
+  const markets = marketsQuery.data ?? []
   const displayMarkets = sortMarkets(markets)
 
+  // Errors only matter when there is no data to show. A failed
+  // background refetch keeps the last good data on screen.
+  const listError =
+    marketsQuery.data === undefined && marketsQuery.error !== null
+      ? marketsQuery.error.message
+      : null
+
+  const detail = detailQuery.data ?? null
+  const detailError =
+    detail === null && detailQuery.error !== null
+      ? detailQuery.error.message
+      : null
+
+  // A market can settle and drop out of the refreshed list while it is
+  // selected. The detail response is an OutcomeMarket too, so it keeps
+  // the panel populated.
   const selectedMarket =
-    markets.find(
-      (market) => market.id === selectedMarketId,
-    ) ?? null
-
-  useEffect(() => {
-    let ignore = false
-
-    async function loadMarkets() {
-      try {
-        const fetchedMarkets = await fetchMarkets()
-
-        if (!ignore) {
-          setMarkets(fetchedMarkets)
-        }
-      } catch (caughtError) {
-        if (!ignore) {
-          setError(errorMessage(caughtError))
-        }
-      } finally {
-        if (!ignore) {
-          setIsLoading(false)
-        }
-      }
-    }
-
-    loadMarkets()
-
-    return () => {
-      ignore = true
-    }
-  }, [])
-
-  useEffect(() => {
-    // Whenever the selection changes, drop the previous market's detail
-    // so it can never be shown under the new market's heading.
-    setDetail(null)
-    setDetailError(null)
-
-    if (selectedMarketId === null) {
-      return
-    }
-
-    let ignore = false
-
-    async function loadDetail(marketId: string) {
-      try {
-        const fetchedDetail = await fetchMarketDetail(marketId)
-
-        if (!ignore) {
-          setDetail(fetchedDetail)
-        }
-      } catch (caughtError) {
-        if (!ignore) {
-          setDetailError(errorMessage(caughtError))
-        }
-      }
-    }
-
-    loadDetail(selectedMarketId)
-
-    return () => {
-      ignore = true
-    }
-  }, [selectedMarketId])
+    markets.find((market) => market.id === selectedMarketId) ?? detail
 
   function handleSelectMarket(marketId: string) {
     setSelectedMarketId(marketId)
@@ -113,12 +58,12 @@ function App() {
   let workspaceMessage =
     "Choose a market from the list to inspect its details"
 
-  if (isLoading) {
+  if (marketsQuery.isPending) {
     workspaceTitle = "Loading markets"
     workspaceMessage = "Waiting for market data from the API"
-  } else if (error) {
+  } else if (listError !== null) {
     workspaceTitle = "Markets unavailable"
-    workspaceMessage = error
+    workspaceMessage = listError
   }
 
   return (
@@ -132,12 +77,12 @@ function App() {
 
       <div className="terminal-layout">
         <aside className="market-sidebar">
-          {isLoading ? (
+          {marketsQuery.isPending ? (
             <p className="request-status">Loading markets...</p>
-          ) : error ? (
+          ) : listError !== null ? (
             <div className="request-status request-status--error">
               <strong>Failed to load markets</strong>
-              <p>{error}</p>
+              <p>{listError}</p>
             </div>
           ) : (
             <MarketList
@@ -149,7 +94,7 @@ function App() {
         </aside>
 
         <section className="market-workspace">
-          {selectedMarket ? (
+          {selectedMarket !== null ? (
             <MarketDetail
               market={selectedMarket}
               detail={detail}

@@ -6,8 +6,12 @@ import type {
 
 const API_BASE_URL = 'http://127.0.0.1:8000'
 
-async function requestJson<T>(path: string, label: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`)
+async function requestJson<T>(
+  path: string,
+  label: string,
+  signal?: AbortSignal,
+): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, { signal })
 
   if (!response.ok) {
     throw new Error(
@@ -18,16 +22,20 @@ async function requestJson<T>(path: string, label: string): Promise<T> {
   return (await response.json()) as T
 }
 
-export async function fetchMarkets(): Promise<OutcomeMarket[]> {
-  return requestJson<OutcomeMarket[]>('/markets', 'markets')
+export async function fetchMarkets(
+  signal?: AbortSignal,
+): Promise<OutcomeMarket[]> {
+  return requestJson<OutcomeMarket[]>('/markets', 'markets', signal)
 }
 
 export async function fetchMarketDetail(
   marketId: string,
+  signal?: AbortSignal,
 ): Promise<OutcomeMarketDetail> {
   return requestJson<OutcomeMarketDetail>(
     `/markets/${encodeURIComponent(marketId)}`,
     `market ${marketId}`,
+    signal,
   )
 }
 
