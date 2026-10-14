@@ -23,14 +23,18 @@ function MarketList({
       </div>
 
       <div className="market-list-items">
-        {markets.map((market) => (
-          <MarketCard
-            key={market.id}
-            market={market}
-            isSelected={market.id === selectedMarketId}
-            onSelect={onSelect}
-          />
-        ))}
+        {markets.length === 0 ? (
+          <p className="market-list-empty">No markets to show.</p>
+        ) : (
+          markets.map((market) => (
+            <MarketCard
+              key={market.id}
+              market={market}
+              isSelected={market.id === selectedMarketId}
+              onSelect={onSelect}
+            />
+          ))
+        )}
       </div>
     </section>
   )

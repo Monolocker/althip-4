@@ -2,34 +2,23 @@ import { useState } from "react"
 import { useMarketDetail, useMarkets } from "./api/queries"
 import MarketDetail from "./components/MarketDetail"
 import MarketList from "./components/MarketList"
-import type { OutcomeMarket } from "./types/market"
-
-function sortMarkets(markets: OutcomeMarket[]): OutcomeMarket[] {
-  return [...markets].sort((a, b) => {
-    const aParsed = a.question !== a.description
-    const bParsed = b.question !== b.description
-    if (aParsed !== bParsed) {
-      return aParsed ? -1 : 1
-    }
-
-    if (a.closesAt !== null && b.closesAt !== null) {
-      return a.closesAt.localeCompare(b.closesAt)
-    }
-    if (a.closesAt !== null) return -1
-    if (b.closesAt !== null) return 1
-    return 0
-  })
-}
+import MarketSearch from "./components/MarketSearch"
+import { searchMarkets, sortMarkets } from "./features/markets/discovery"
 
 function App() {
   const [selectedMarketId, setSelectedMarketId] =
     useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
 
   const marketsQuery = useMarkets()
   const detailQuery = useMarketDetail(selectedMarketId)
 
   const markets = marketsQuery.data ?? []
-  const displayMarkets = sortMarkets(markets)
+
+  // Derived, not stored: the visible list is recomputed from the
+  // server data and the query on every render, so it can never drift
+  // out of sync with either of them.
+  const visibleMarkets = sortMarkets(searchMarkets(markets, searchQuery))
 
   // Errors only matter when there is no data to show. A failed
   // background refetch keeps the last good data on screen.
@@ -47,6 +36,8 @@ function App() {
   // A market can settle and drop out of the refreshed list while it is
   // selected. The detail response is an OutcomeMarket too, so it keeps
   // the panel populated.
+  // Looked up in the full list, not visibleMarkets: narrowing the
+  // search must not close the market currently being inspected.
   const selectedMarket =
     markets.find((market) => market.id === selectedMarketId) ?? detail
 
@@ -85,11 +76,19 @@ function App() {
               <p>{listError}</p>
             </div>
           ) : (
-            <MarketList
-              markets={displayMarkets}
-              selectedMarketId={selectedMarketId}
-              onSelect={handleSelectMarket}
-            />
+            <>
+              <MarketSearch
+                value={searchQuery}
+                onChange={setSearchQuery}
+                resultCount={visibleMarkets.length}
+                totalCount={markets.length}
+              />
+              <MarketList
+                markets={visibleMarkets}
+                selectedMarketId={selectedMarketId}
+                onSelect={handleSelectMarket}
+              />
+            </>
           )}
         </aside>
 

@@ -413,3 +413,68 @@ button {
     margin-bottom: 0;
   }
 }
+
+/* Milestone 17.1: market search */
+
+.market-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: -1rem -1rem 1rem;
+  padding: 1rem;
+  background: #fff;
+  border-bottom: 1px solid #eee;
+  border-radius: 10px 10px 0 0;
+}
+
+.market-search-label {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: #666;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.market-search-field {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.market-search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  font: inherit;
+}
+
+.market-search-input:focus {
+  outline: 2px solid #333;
+  outline-offset: 1px;
+}
+
+.market-search-clear {
+  padding: 0 0.75rem;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.market-search-clear:hover {
+  background: #eee;
+}
+
+.market-search-count {
+  margin: 0.5rem 0 0;
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.market-list-empty {
+  margin: 0;
+  padding: 1rem 0;
+  color: #777;
+  text-align: center;
+}
