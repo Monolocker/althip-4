@@ -17,10 +17,12 @@ import {
   }: CloseBucketFilterProps) {
     return (
       <div
-        className="close-filter"
+        className="filter-chips"
         role="group"
         aria-label="Filter by time until the market's event"
       >
+        <span className="filter-chips-label">Time</span>
+  
         {CLOSE_FILTERS.map((filter) => {
           const isActive = filter === value
           const count = counts[filter]
@@ -30,9 +32,7 @@ import {
               key={filter}
               type="button"
               className={
-                isActive
-                  ? 'close-filter-chip close-filter-chip--active'
-                  : 'close-filter-chip'
+                isActive ? 'filter-chip filter-chip--active' : 'filter-chip'
               }
               aria-pressed={isActive}
               // An empty bucket can't be selected, unless it is already
@@ -42,7 +42,7 @@ import {
               onClick={() => onChange(filter)}
             >
               {CLOSE_FILTER_LABELS[filter]}
-              <span className="close-filter-count">{count}</span>
+              <span className="filter-chip-count">{count}</span>
             </button>
           )
         })}

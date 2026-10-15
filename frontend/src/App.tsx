@@ -1,15 +1,21 @@
 import { useState } from "react"
 import { useMarketDetail, useMarkets } from "./api/queries"
 import CloseBucketFilter from "./components/CloseBucketFilter"
+import DeployerFilter from "./components/DeployerFilter"
 import MarketDetail from "./components/MarketDetail"
 import MarketList from "./components/MarketList"
 import MarketSearch from "./components/MarketSearch"
+import MarketSort from "./components/MarketSort"
 import {
+  countByVenue,
   countCloseBuckets,
   filterByCloseBucket,
+  filterByVenue,
+  listVenues,
   searchMarkets,
   sortMarkets,
   type CloseFilter,
+  type SortMode,
 } from "./features/markets/discovery"
 import { useNow } from "./hooks/useNow"
 
@@ -22,6 +28,9 @@ function App() {
     useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [closeFilter, setCloseFilter] = useState<CloseFilter>("all")
+  const [sortMode, setSortMode] = useState<SortMode>("default")
+  // null = all deployers; "" = markets with no venue.
+  const [venueFilter, setVenueFilter] = useState<string | null>(null)
 
   const now = useNow(CLOCK_TICK_MS)
   const marketsQuery = useMarkets()
@@ -30,13 +39,23 @@ function App() {
   const markets = marketsQuery.data ?? []
 
   // Discovery pipeline, all derived on every render:
-  //   search -> (count buckets) -> bucket filter -> sort
-  // Bucket counts are taken after search, so the chips describe the
-  // markets that match the current query.
+  //   search -> deployer filter + time filter -> sort
+  // Faceted counts: each chip group counts the markets that pass every
+  // OTHER active filter, so a chip's number is exactly how many markets
+  // you would see by clicking it.
   const searchedMarkets = searchMarkets(markets, searchQuery)
-  const closeCounts = countCloseBuckets(searchedMarkets, now)
+  const byVenue = filterByVenue(searchedMarkets, venueFilter)
+  const byTime = filterByCloseBucket(searchedMarkets, closeFilter, now)
+
+  const closeCounts = countCloseBuckets(byVenue, now)
+  const venueCounts = countByVenue(byTime)
+  // Chip order comes from the full list so it doesn't jump around.
+  const venues = listVenues(markets)
+
   const visibleMarkets = sortMarkets(
-    filterByCloseBucket(searchedMarkets, closeFilter, now),
+    filterByCloseBucket(byVenue, closeFilter, now),
+    sortMode,
+    now,
   )
 
   // Errors only matter when there is no data to show. A failed
@@ -103,11 +122,19 @@ function App() {
                   resultCount={searchedMarkets.length}
                   totalCount={markets.length}
                 />
+                <DeployerFilter
+                  venues={venues}
+                  counts={venueCounts}
+                  totalCount={byTime.length}
+                  value={venueFilter}
+                  onChange={setVenueFilter}
+                />
                 <CloseBucketFilter
                   value={closeFilter}
                   onChange={setCloseFilter}
                   counts={closeCounts}
                 />
+                <MarketSort value={sortMode} onChange={setSortMode} />
               </div>
               <MarketList
                 markets={visibleMarkets}

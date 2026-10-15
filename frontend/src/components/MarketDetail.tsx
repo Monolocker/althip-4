@@ -75,7 +75,7 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
 
         <div>
           <dt>Deployer</dt>
-          <dd>{detail?.deployer ?? '…'}</dd>
+          <dd>{detail === null ? '…' : detail.deployer ?? '—'}</dd>
         </div>
       </dl>
 

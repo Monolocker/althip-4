@@ -483,15 +483,27 @@ button {
   text-align: center;
 }
 
-/* Milestone 17.2: close-time bucket filter */
+/* Milestone 17.2 + 17.4: filter chip groups (time, deployer) */
 
-.close-filter {
+.filter-chips {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.35rem;
 }
 
-.close-filter-chip {
+.filter-chips + .filter-chips {
+  margin-top: 0.6rem;
+}
+
+.filter-chips-label {
+  width: 100%;
+  color: #666;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.filter-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -503,26 +515,53 @@ button {
   cursor: pointer;
 }
 
-.close-filter-chip:hover:not(:disabled) {
+.filter-chip:hover:not(:disabled) {
   background: #eee;
 }
 
-.close-filter-chip:disabled {
+.filter-chip:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-.close-filter-chip--active {
+.filter-chip--active {
   background: #1a1a1a;
   border-color: #1a1a1a;
   color: #fff;
 }
 
-.close-filter-chip--active:hover:not(:disabled) {
+.filter-chip--active:hover:not(:disabled) {
   background: #333;
 }
 
-.close-filter-count {
+.filter-chip-count {
   font-variant-numeric: tabular-nums;
   opacity: 0.7;
+}
+
+
+/* Milestone 17.3: sort control */
+
+.market-sort {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.market-sort-label {
+  color: #666;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.market-sort-select {
+  flex: 1;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.85rem;
 }

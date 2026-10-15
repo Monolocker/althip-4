@@ -4,6 +4,8 @@ import type { OutcomeMarket } from '../../types/market'
 // markets out. No React, no fetching, no state. Every discovery
 // feature in Milestone 17 (search, time buckets, sort modes) lands
 // here as another small function the UI composes.
+//
+// Pipeline (see App.tsx): search -> deployer + time filters -> sort
 
 // ---------------------------------------------------------------
 // Discovery time
@@ -16,27 +18,6 @@ import type { OutcomeMarket } from '../../types/market'
 // together, because both go through this function.
 function discoveryTime(market: OutcomeMarket): string | null {
   return market.eventAt ?? market.resolvesBy
-}
-
-// Default triage order: markets with a parsed, human-readable
-// question first, then soonest discovery time.
-export function sortMarkets(markets: OutcomeMarket[]): OutcomeMarket[] {
-  return [...markets].sort((a, b) => {
-    const aParsed = a.question !== a.description
-    const bParsed = b.question !== b.description
-    if (aParsed !== bParsed) {
-      return aParsed ? -1 : 1
-    }
-
-    const aTime = discoveryTime(a)
-    const bTime = discoveryTime(b)
-    if (aTime !== null && bTime !== null) {
-      return aTime.localeCompare(bTime)
-    }
-    if (aTime !== null) return -1
-    if (bTime !== null) return 1
-    return 0
-  })
 }
 
 // ---------------------------------------------------------------
@@ -176,4 +157,146 @@ export function countCloseBuckets(
   }
 
   return counts
+}
+
+// ---------------------------------------------------------------
+// Deployers
+// ---------------------------------------------------------------
+
+// Each deployer owns exactly one venue (one entry per venue in
+// outcomeMeta.deployers), so filtering by venue is filtering by
+// deployer. Unlike time buckets, venues are an OPEN set: new deployers
+// can appear at any time, so a venue is a plain string, not a union,
+// and the list of venues is derived from the data instead of hard-coded.
+
+// The backend sends "" for markets with no venue (Hyperliquid's
+// "Recurring" markets). "" is a real value meaning "no venue"; it is
+// different from the filter value null, which means "all deployers".
+export function venueLabel(venue: string): string {
+    return venue === '' ? 'No venue' : venue
+  }
+  
+  export function countByVenue(markets: OutcomeMarket[]): Map<string, number> {
+    const counts = new Map<string, number>()
+    for (const market of markets) {
+      counts.set(market.venue, (counts.get(market.venue) ?? 0) + 1)
+    }
+    return counts
+  }
+  
+  // Every venue present in the data, largest first (ties by name). Taken
+  // from the full market list so the chip order stays put while other
+  // filters change the counts.
+  export function listVenues(markets: OutcomeMarket[]): string[] {
+    return [...countByVenue(markets).entries()]
+      .sort(([aVenue, aCount], [bVenue, bCount]) =>
+        bCount !== aCount ? bCount - aCount : aVenue.localeCompare(bVenue),
+      )
+      .map(([venue]) => venue)
+  }
+  
+  // null means "no deployer filter".
+  export function filterByVenue(
+    markets: OutcomeMarket[],
+    venue: string | null,
+  ): OutcomeMarket[] {
+    if (venue === null) {
+      return markets
+    }
+    return markets.filter((market) => market.venue === venue)
+  }
+
+// ---------------------------------------------------------------
+// Sorting
+// ---------------------------------------------------------------
+
+export type SortMode = 'default' | 'soonest' | 'newest'
+
+// Display order of the sort options.
+export const SORT_MODES: SortMode[] = ['default', 'soonest', 'newest']
+
+export const SORT_MODE_LABELS: Record<SortMode, string> = {
+  default: 'Recommended',
+  soonest: 'Happening soonest',
+  newest: 'Newest',
+}
+
+// Type predicate: when this returns true, TypeScript narrows `value`
+// from string to SortMode in the caller. This is how untyped input
+// (a <select>'s value is always a plain string) becomes a typed value
+// without lying to the compiler with `as SortMode`.
+export function isSortMode(value: string): value is SortMode {
+  return (SORT_MODES as readonly string[]).includes(value)
+}
+
+// Earliest first; markets without a time go last.
+function compareTimes(a: string | null, b: string | null): number {
+  if (a !== null && b !== null) return a.localeCompare(b)
+  if (a !== null) return -1
+  if (b !== null) return 1
+  return 0
+}
+
+// Recommended: markets with a parsed, human-readable question first,
+// then soonest discovery time. (Unchanged triage order from 17.2.)
+function compareDefault(a: OutcomeMarket, b: OutcomeMarket): number {
+  const aParsed = a.question !== a.description
+  const bParsed = b.question !== b.description
+  if (aParsed !== bParsed) {
+    return aParsed ? -1 : 1
+  }
+  return compareTimes(discoveryTime(a), discoveryTime(b))
+}
+
+// Tiers for "happening soonest": upcoming events, then events that
+// already happened but have not settled, then undated markets.
+function soonestTier(market: OutcomeMarket, now: number): number {
+  const bucket = getCloseBucket(market, now)
+  if (bucket === 'awaiting') return 1
+  if (bucket === 'undated') return 2
+  return 0
+}
+
+// Happening soonest: ignores question quality entirely. Within the
+// upcoming tier the nearest event comes first; within the awaiting
+// tier the most recently passed event comes first.
+function compareSoonest(
+  a: OutcomeMarket,
+  b: OutcomeMarket,
+  now: number,
+): number {
+  const tierDiff = soonestTier(a, now) - soonestTier(b, now)
+  if (tierDiff !== 0) {
+    return tierDiff
+  }
+
+  const timeOrder = compareTimes(discoveryTime(a), discoveryTime(b))
+  return soonestTier(a, now) === 1 ? -timeOrder : timeOrder
+}
+
+// Newest: highest outcome id first. ASSUMPTION: Hyperliquid assigns
+// outcome ids in increasing order as markets are created. Observed in
+// live data (e.g. later recurring BTC markets have higher ids), but
+// not stated in the official docs.
+function compareNewest(a: OutcomeMarket, b: OutcomeMarket): number {
+  return Number(b.id) - Number(a.id)
+}
+
+export function sortMarkets(
+  markets: OutcomeMarket[],
+  mode: SortMode,
+  now: number,
+): OutcomeMarket[] {
+  // Copy first: Array.prototype.sort mutates in place, and `markets`
+  // may be TanStack Query's cached array, which must never be mutated.
+  const sorted = [...markets]
+
+  switch (mode) {
+    case 'default':
+      return sorted.sort(compareDefault)
+    case 'soonest':
+      return sorted.sort((a, b) => compareSoonest(a, b, now))
+    case 'newest':
+      return sorted.sort(compareNewest)
+  }
 }
