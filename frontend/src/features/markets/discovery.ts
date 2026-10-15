@@ -169,11 +169,13 @@ export function countCloseBuckets(
 // can appear at any time, so a venue is a plain string, not a union,
 // and the list of venues is derived from the data instead of hard-coded.
 
-// The backend sends "" for markets with no venue (Hyperliquid's
-// "Recurring" markets). "" is a real value meaning "no venue"; it is
-// different from the filter value null, which means "all deployers".
+// The backend sends "" for markets with no venue: Hyperliquid's own
+// protocol-deployed "Recurring" markets, which have no entry in
+// outcomeMeta.deployers. "" is a real value meaning "deployed by
+// Hyperliquid"; it is different from the filter value null, which
+// means "all deployers".
 export function venueLabel(venue: string): string {
-    return venue === '' ? 'No venue' : venue
+    return venue === '' ? 'Hyperliquid' : venue
   }
   
   export function countByVenue(markets: OutcomeMarket[]): Map<string, number> {

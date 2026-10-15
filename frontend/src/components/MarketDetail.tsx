@@ -2,6 +2,7 @@ import type {
   OutcomeMarket,
   OutcomeMarketDetail,
 } from '../types/market'
+import { venueLabel } from '../features/markets/discovery'
 import { formatDateTime, formatPrice } from '../utils/format'
 import OrderBookPanel from './OrderBookPanel'
 
@@ -65,7 +66,7 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
 
         <div>
           <dt>Venue</dt>
-          <dd>{market.venue || '—'}</dd>
+          <dd>{venueLabel(market.venue)}</dd>
         </div>
 
         <div>
