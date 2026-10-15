@@ -2,11 +2,24 @@ import type { OutcomeMarket } from '../../types/market'
 
 // Discovery logic: pure functions that take markets in and return
 // markets out. No React, no fetching, no state. Every discovery
-// feature in Milestone 17 (search, close-time buckets, sort modes)
-// lands here as another small function the UI composes.
+// feature in Milestone 17 (search, time buckets, sort modes) lands
+// here as another small function the UI composes.
 
-// Default triage order (moved unchanged from App.tsx): markets with a
-// parsed, human-readable question first, then soonest close time.
+// ---------------------------------------------------------------
+// Discovery time
+// ---------------------------------------------------------------
+
+// The one time discovery features use (decision from Milestone 17.2):
+// when the deciding event happens, falling back to the resolution
+// deadline for markets that have no scheduled event (tournaments,
+// awards, IPOs). Changing this rule changes buckets and sorting
+// together, because both go through this function.
+function discoveryTime(market: OutcomeMarket): string | null {
+  return market.eventAt ?? market.resolvesBy
+}
+
+// Default triage order: markets with a parsed, human-readable
+// question first, then soonest discovery time.
 export function sortMarkets(markets: OutcomeMarket[]): OutcomeMarket[] {
   return [...markets].sort((a, b) => {
     const aParsed = a.question !== a.description
@@ -15,14 +28,20 @@ export function sortMarkets(markets: OutcomeMarket[]): OutcomeMarket[] {
       return aParsed ? -1 : 1
     }
 
-    if (a.closesAt !== null && b.closesAt !== null) {
-      return a.closesAt.localeCompare(b.closesAt)
+    const aTime = discoveryTime(a)
+    const bTime = discoveryTime(b)
+    if (aTime !== null && bTime !== null) {
+      return aTime.localeCompare(bTime)
     }
-    if (a.closesAt !== null) return -1
-    if (b.closesAt !== null) return 1
+    if (aTime !== null) return -1
+    if (bTime !== null) return 1
     return 0
   })
 }
+
+// ---------------------------------------------------------------
+// Search
+// ---------------------------------------------------------------
 
 // "  BTC   Touch " -> ["btc", "touch"]. An empty or whitespace-only
 // query produces no terms, which means "no filter".
@@ -60,4 +79,101 @@ export function searchMarkets(
     const text = searchableText(market)
     return terms.every((term) => text.includes(term))
   })
+}
+
+// ---------------------------------------------------------------
+// Time buckets
+// ---------------------------------------------------------------
+
+const HOUR_MS = 60 * 60 * 1000
+const DAY_MS = 24 * HOUR_MS
+
+// Every market falls into exactly one bucket.
+export type CloseBucket =
+  | 'awaiting'
+  | 'under-24h'
+  | '1-7d'
+  | 'over-7d'
+  | 'undated'
+
+// A filter is either one bucket or no filtering at all.
+export type CloseFilter = 'all' | CloseBucket
+
+// Display order of the filter chips.
+export const CLOSE_FILTERS: CloseFilter[] = [
+  'all',
+  'awaiting',
+  'under-24h',
+  '1-7d',
+  'over-7d',
+  'undated',
+]
+
+// Record<CloseFilter, string> forces a label for every member of the
+// union: adding a bucket without a label is a compile error.
+export const CLOSE_FILTER_LABELS: Record<CloseFilter, string> = {
+  all: 'All',
+  awaiting: 'Awaiting result',
+  'under-24h': '< 24h',
+  '1-7d': '1–7d',
+  'over-7d': '> 7d',
+  undated: 'No date',
+}
+
+// Boundaries: under-24h is (0, 24h); 1-7d is [24h, 7d]; over-7d is
+// beyond 7d. "awaiting" means the discovery time has passed but the
+// market is still listed as open: the event happened (or the game is
+// in progress) and the market has not settled yet.
+export function getCloseBucket(
+  market: OutcomeMarket,
+  now: number,
+): CloseBucket {
+  const time = discoveryTime(market)
+  if (time === null) {
+    return 'undated'
+  }
+
+  const timeMs = Date.parse(time)
+  if (Number.isNaN(timeMs)) {
+    return 'undated'
+  }
+
+  const remainingMs = timeMs - now
+  if (remainingMs <= 0) return 'awaiting'
+  if (remainingMs < DAY_MS) return 'under-24h'
+  if (remainingMs <= 7 * DAY_MS) return '1-7d'
+  return 'over-7d'
+}
+
+export function filterByCloseBucket(
+  markets: OutcomeMarket[],
+  filter: CloseFilter,
+  now: number,
+): OutcomeMarket[] {
+  if (filter === 'all') {
+    return markets
+  }
+  // Narrowing: past this point TypeScript knows `filter` is a
+  // CloseBucket, so comparing it to getCloseBucket()'s result is valid.
+  return markets.filter((market) => getCloseBucket(market, now) === filter)
+}
+
+export function countCloseBuckets(
+  markets: OutcomeMarket[],
+  now: number,
+): Record<CloseFilter, number> {
+  const counts: Record<CloseFilter, number> = {
+    all: markets.length,
+    awaiting: 0,
+    'under-24h': 0,
+    '1-7d': 0,
+    'over-7d': 0,
+    undated: 0,
+  }
+
+  for (const market of markets) {
+    counts[getCloseBucket(market, now)] += 1
+  }
+
+  return counts
 }

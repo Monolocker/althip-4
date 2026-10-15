@@ -416,7 +416,7 @@ button {
 
 /* Milestone 17.1: market search */
 
-.market-search {
+.market-controls {
   position: sticky;
   top: 0;
   z-index: 1;
@@ -425,6 +425,10 @@ button {
   background: #fff;
   border-bottom: 1px solid #eee;
   border-radius: 10px 10px 0 0;
+}
+
+.market-search {
+  margin-bottom: 0.75rem;
 }
 
 .market-search-label {
@@ -477,4 +481,48 @@ button {
   padding: 1rem 0;
   color: #777;
   text-align: center;
+}
+
+/* Milestone 17.2: close-time bucket filter */
+
+.close-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.close-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 999px;
+  background: #fff;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.close-filter-chip:hover:not(:disabled) {
+  background: #eee;
+}
+
+.close-filter-chip:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.close-filter-chip--active {
+  background: #1a1a1a;
+  border-color: #1a1a1a;
+  color: #fff;
+}
+
+.close-filter-chip--active:hover:not(:disabled) {
+  background: #333;
+}
+
+.close-filter-count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
 }

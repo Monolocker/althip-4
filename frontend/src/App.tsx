@@ -1,24 +1,43 @@
 import { useState } from "react"
 import { useMarketDetail, useMarkets } from "./api/queries"
+import CloseBucketFilter from "./components/CloseBucketFilter"
 import MarketDetail from "./components/MarketDetail"
 import MarketList from "./components/MarketList"
 import MarketSearch from "./components/MarketSearch"
-import { searchMarkets, sortMarkets } from "./features/markets/discovery"
+import {
+  countCloseBuckets,
+  filterByCloseBucket,
+  searchMarkets,
+  sortMarkets,
+  type CloseFilter,
+} from "./features/markets/discovery"
+import { useNow } from "./hooks/useNow"
+
+// Bucket boundaries are hours and days apart; re-evaluating them once
+// a minute is far more precise than they need.
+const CLOCK_TICK_MS = 60_000
 
 function App() {
   const [selectedMarketId, setSelectedMarketId] =
     useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  const [closeFilter, setCloseFilter] = useState<CloseFilter>("all")
 
+  const now = useNow(CLOCK_TICK_MS)
   const marketsQuery = useMarkets()
   const detailQuery = useMarketDetail(selectedMarketId)
 
   const markets = marketsQuery.data ?? []
 
-  // Derived, not stored: the visible list is recomputed from the
-  // server data and the query on every render, so it can never drift
-  // out of sync with either of them.
-  const visibleMarkets = sortMarkets(searchMarkets(markets, searchQuery))
+  // Discovery pipeline, all derived on every render:
+  //   search -> (count buckets) -> bucket filter -> sort
+  // Bucket counts are taken after search, so the chips describe the
+  // markets that match the current query.
+  const searchedMarkets = searchMarkets(markets, searchQuery)
+  const closeCounts = countCloseBuckets(searchedMarkets, now)
+  const visibleMarkets = sortMarkets(
+    filterByCloseBucket(searchedMarkets, closeFilter, now),
+  )
 
   // Errors only matter when there is no data to show. A failed
   // background refetch keeps the last good data on screen.
@@ -77,12 +96,19 @@ function App() {
             </div>
           ) : (
             <>
-              <MarketSearch
-                value={searchQuery}
-                onChange={setSearchQuery}
-                resultCount={visibleMarkets.length}
-                totalCount={markets.length}
-              />
+              <div className="market-controls">
+                <MarketSearch
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                  resultCount={searchedMarkets.length}
+                  totalCount={markets.length}
+                />
+                <CloseBucketFilter
+                  value={closeFilter}
+                  onChange={setCloseFilter}
+                  counts={closeCounts}
+                />
+              </div>
               <MarketList
                 markets={visibleMarkets}
                 selectedMarketId={selectedMarketId}

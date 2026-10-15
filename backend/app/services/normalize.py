@@ -44,6 +44,63 @@ def parse_hl_timestamp(value: str) -> datetime | None:
     except ValueError:
         return None 
     
+# Spec keys that carry times, in priority order. Hyperliquid's docs do
+# not define template fields: these meanings are inferred from key names
+# and observed live values (Milestone 17.2 investigation).
+# Event keys: when the deciding thing happens.
+EVENT_TIME_KEYS = ("time", "expiry", "scheduledStart", "scheduledDecision")
+# Deadline keys: the latest time the market should resolve.
+DEADLINE_KEYS = (
+    "resolutionDeadline",
+    "decisionDeadline",
+    "listingDeadline",
+    "dateTime",
+)
+
+
+def _first_time(spec: dict[str, str], keys: tuple[str, ...]) -> datetime | None:
+    """Return the first key in `keys` whose value parses as a timestamp."""
+    for key in keys:
+        raw = spec.get(key)
+        if raw:
+            parsed = parse_hl_timestamp(raw)
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def resolve_times(
+    spec: dict[str, str],
+) -> tuple[datetime | None, datetime | None]:
+    """Find (event_at, resolves_by) in a parsed spec.
+
+    Price markets have one time that is both the event and the deadline,
+    so resolves_by falls back to event_at.
+    """
+    event_at = _first_time(spec, EVENT_TIME_KEYS)
+    resolves_by = _first_time(spec, DEADLINE_KEYS) or event_at
+    return event_at, resolves_by
+
+
+def question_specs_by_outcome(meta: dict[str, Any]) -> dict[int, dict[str, str]]:
+    """Map each question member's outcome id to its question's parsed spec.
+
+    Multi-outcome question members (e.g. "participant:Buffalo Bills")
+    carry no times of their own; the question they belong to does.
+    """
+    index: dict[int, dict[str, str]] = {}
+    for question in meta.get("questions", []):
+        spec = parse_spec(question.get("description", ""))
+        members = [*question.get("namedOutcomes", []), question.get("fallbackOutcome")]
+        for member in members:
+            try:
+                index[int(member)] = spec
+            except (TypeError, ValueError):
+                # None (no fallback outcome) or a malformed id: skip it.
+                continue
+    return index
+
+
 def clean_label(label: str) -> str:
     """'template:Yes' -> 'Yes'"""
     prefix = "template:"
@@ -52,14 +109,14 @@ def clean_label(label: str) -> str:
 def _fmt_time(dt: datetime | None) -> str:
     return dt.strftime("%b %d, %Y %H:%M UTC") if dt else "expiry"
 
-def build_question(name: str, spec: dict[str, str], closes_at: datetime | None) -> str | None:
+def build_question(name: str, spec: dict[str, str], event_at: datetime | None) -> str | None:
     """Build a human-readable display summary for known dialects
     
     Returns None for unknown dialects so the caller can fall back
     to the raw description. These strings are display text only,
     exact resolution semantics live in HL's own rules
     """
-    when = _fmt_time(closes_at)
+    when = _fmt_time(event_at)
 
     if name == "template:priceTouch" and "target" in spec:
         subject = spec.get("priceDescription") or spec.get("perp", "price")
@@ -74,20 +131,24 @@ def build_question(name: str, spec: dict[str, str], closes_at: datetime | None) 
         return f"Will {subject} be above {spec['targetPrice']} at {when}?"
     
 def normalize_outcome(
-    raw: dict[str, Any], mids: dict[str, str]
+    raw: dict[str, Any],
+    mids: dict[str, str],
+    question_spec: dict[str, str] | None = None,
 ) -> OutcomeMarket:
-    """Convert one raw Hyperliquid outcome + mid prices into our model."""
+    """Convert one raw Hyperliquid outcome + mid prices into our model.
+
+    `question_spec` is the parsed spec of the question this outcome
+    belongs to, if any; it supplies times the outcome itself lacks.
+    """
     outcome_id = int(raw["outcome"])
     description = raw.get("description", "")
     spec = parse_spec(description)
 
-    # Live data uses 'time' in template markets and 'expiry' in
-    # recurring ones (Milestone 7 finding).
-    raw_time = spec.get("time") or spec.get("expiry")
-    closes_at = parse_hl_timestamp(raw_time) if raw_time else None
+    # Outcome keys override question keys: the more specific spec wins.
+    event_at, resolves_by = resolve_times({**(question_spec or {}), **spec})
 
     name = raw.get("name", "")
-    question = build_question(name, spec, closes_at) or description or name
+    question = build_question(name, spec, event_at) or description or name
 
     sides: list[OutcomeSide] = []
     for index, side_spec in enumerate(raw.get("sideSpecs", [])[:2]):
@@ -112,7 +173,8 @@ def normalize_outcome(
         question=question,
         description=description,
         status="open",
-        closes_at=closes_at,
+        event_at=event_at,
+        resolves_by=resolves_by,
         quote_token=raw.get("quoteToken", "USDC"),
         venue=raw.get("venue", ""),
         sides=sides,
@@ -127,10 +189,12 @@ def normalize_markets(
     One malformed market is logged and skipped; it must never prevent
     the other 41 from being served.
     """
+    question_specs = question_specs_by_outcome(meta)
     markets: list[OutcomeMarket] = []
     for raw in meta.get("outcomes", []):
         try:
-            markets.append(normalize_outcome(raw, mids))
+            question_spec = question_specs.get(int(raw["outcome"]))
+            markets.append(normalize_outcome(raw, mids, question_spec))
         except Exception:
             logger.exception(
                 "Skipping unnormalizable outcome: %r", raw.get("outcome")
@@ -189,7 +253,8 @@ def normalize_market_detail(
     raw: dict[str, Any], mids: dict[str, str], meta: dict[str, Any]
 ) -> OutcomeMarketDetail:
     """Build the rich detail model for one live outcome."""
-    return _build_detail(normalize_outcome(raw, mids), meta)
+    question_spec = question_specs_by_outcome(meta).get(int(raw["outcome"]))
+    return _build_detail(normalize_outcome(raw, mids, question_spec), meta)
 
 def normalize_settled_detail(
     settled: dict[str, Any], meta: dict[str, Any]
@@ -200,7 +265,12 @@ def normalize_settled_detail(
     so same normalizer applies. No live mids for settled markets, 
     both prices are None.
     """
-    base = normalize_outcome(settled["spec"], mids={})
+    # A settled outcome's question may itself be gone from outcomeMeta;
+    # then question members simply have no times, which is acceptable.
+    question_spec = question_specs_by_outcome(meta).get(
+        int(settled["spec"]["outcome"])
+    )
+    base = normalize_outcome(settled["spec"], mids={}, question_spec=question_spec)
     base = base.model_copy(update={"status": "settled"})
 
     try:
@@ -291,7 +361,8 @@ if __name__ == "__main__":
             print(m.model_dump_json(by_alias=True, indent=2))
 
         fallbacks = [m for m in markets if m.question == m.description]
-        no_close = [m for m in markets if m.closes_at is None]
+        no_event = [m for m in markets if m.event_at is None]
+        no_time = [m for m in markets if m.resolves_by is None]
         priced = [
             m for m in markets if all(s.price is not None for s in m.sides)
         ]
@@ -304,7 +375,10 @@ if __name__ == "__main__":
         print(f"\nquestion fell back to raw description: {len(fallbacks)}")
         for m in fallbacks[:5]:
             print(f"  - {m.id} {m.name}: {m.description[:70]}")
-        print(f"missing closesAt: {len(no_close)}")
+        print(f"no eventAt (deadline only or undated): {len(no_event)}")
+        print(f"no resolvesBy (no time at all): {len(no_time)}")
+        for m in no_time[:5]:
+            print(f"  - {m.id} {m.name}: {m.description[:70]}")
         print(f"fully priced: {len(priced)}; price pairs summing to ~1: {pair_ok}")
 
     asyncio.run(main())

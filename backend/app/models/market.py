@@ -31,7 +31,12 @@ class OutcomeMarket(BaseModel):
     question: str  # human-readable display summary (NOT resolution criteria)
     description: str  # raw Hyperliquid spec string; the source of truth
     status: Literal["open", "settled"] = "open"
-    closes_at: datetime | None = Field(default=None, alias="closesAt")
+    # When the deciding event is scheduled: price observation time, game
+    # start, scheduled decision. None when the spec names no event time.
+    event_at: datetime | None = Field(default=None, alias="eventAt")
+    # Latest expected resolution time. Equal to event_at for price markets;
+    # a separate, later deadline for sports, policy, awards and IPOs.
+    resolves_by: datetime | None = Field(default=None, alias="resolvesBy")
     quote_token: str = Field(default="USDC", alias="quoteToken")
     venue: str = ""
     sides: list[OutcomeSide]

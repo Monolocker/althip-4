@@ -2,7 +2,7 @@ import type {
   OutcomeMarket,
   OutcomeMarketDetail,
 } from '../types/market'
-import { formatCloseTime, formatPrice } from '../utils/format'
+import { formatDateTime, formatPrice } from '../utils/format'
 import OrderBookPanel from './OrderBookPanel'
 
 interface MarketDetailProps {
@@ -52,9 +52,16 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
         </div>
 
         <div>
-          <dt>Closes</dt>
-          <dd>{formatCloseTime(market.closesAt)}</dd>
+          <dt>Event</dt>
+          <dd>{formatDateTime(market.eventAt)}</dd>
         </div>
+
+        {market.resolvesBy !== market.eventAt && (
+          <div>
+            <dt>Resolves by</dt>
+            <dd>{formatDateTime(market.resolvesBy)}</dd>
+          </div>
+        )}
 
         <div>
           <dt>Venue</dt>

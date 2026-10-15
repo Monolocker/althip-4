@@ -11,7 +11,12 @@ export interface OutcomeMarket {
     question: string
     description: string
     status: "open" | "settled"
-    closesAt: string | null
+    // When the deciding event is scheduled (price observation time,
+    // game start, scheduled decision). Null when the market has none.
+    eventAt: string | null
+    // Latest expected resolution time. Equal to eventAt for price
+    // markets; a later deadline for sports, policy, awards and IPOs.
+    resolvesBy: string | null
     quoteToken: string
     venue: string
     sides: OutcomeSide[]
