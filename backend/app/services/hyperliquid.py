@@ -58,6 +58,27 @@ class HyperliquidClient:
             )
         return data
     
+    async def fetch_spot_asset_ctxs(self) -> list[dict[str, Any]]:
+        """Fetch 24h trading context (volume, prices) for every spot coin.
+
+        Documented for spot pairs. Observed in M17.5, but NOT documented:
+        outcome coins ("#128770") appear here too, e.g.
+        {"coin": "#128770", "dayBaseVlm": "21876.0", "dayNtlVlm": "10220.04",
+        "markPx": "0.2444", "midPx": "0.2559", "prevDayPx": "0.5236", ...}
+
+        Raw response shape: [spotMeta, [ctx, ctx, ...]]. Returns the ctx list
+        """
+
+        data = await self._post_info({"type": "spotMetaAndAssetCtxs"})
+        if not (
+            isinstance(data, list) and len(data) == 2 and isinstance (data[1], list)
+        ):
+            raise HyperliquidError(
+                "Unexepected spotMetaAndAssetCtxs response shape: "
+                f"{type(data).__name__}"
+            )
+        return data[1]
+    
     async def fetch_settled_outcome(
         self, outcome_id: int
     ) -> dict[str, Any] | None: 

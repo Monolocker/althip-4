@@ -101,6 +101,29 @@ def question_specs_by_outcome(meta: dict[str, Any]) -> dict[int, dict[str, str]]
     return index
 
 
+def index_outcome_ctxs(ctxs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Keep only outcome coins ("#...") from spotMetaAndAssetCtxs, keyed by coin.
+
+    The same response also carries ~400 ordinary spot pairs; we only need
+    outcome coins, and a dict gives O(1) lookup per market side.
+    """
+    return {
+        str(ctx["coin"]): ctx
+        for ctx in ctxs
+        if isinstance(ctx, dict) and str(ctx.get("coin", "")).startswith("#")
+    }
+
+
+def _parse_volume(ctx: dict[str, Any] | None) -> float | None:
+    """Read dayBaseVlm defensively: missing or malformed means unknown."""
+    if ctx is None:
+        return None
+    try:
+        return float(ctx["dayBaseVlm"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def clean_label(label: str) -> str:
     """'template:Yes' -> 'Yes'"""
     prefix = "template:"
@@ -134,11 +157,14 @@ def normalize_outcome(
     raw: dict[str, Any],
     mids: dict[str, str],
     question_spec: dict[str, str] | None = None,
+    ctxs: dict[str, dict[str, Any]] | None = None,
 ) -> OutcomeMarket:
     """Convert one raw Hyperliquid outcome + mid prices into our model.
 
     `question_spec` is the parsed spec of the question this outcome
     belongs to, if any; it supplies times the outcome itself lacks.
+    `ctxs` are outcome-coin trading contexts (see index_outcome_ctxs);
+    None or a missing coin simply leaves volume unknown.
     """
     outcome_id = int(raw["outcome"])
     description = raw.get("description", "")
@@ -167,6 +193,11 @@ def normalize_outcome(
             )
         )
 
+    # Both sides report the same dayBaseVlm (verified in __main__ below),
+    # so side 0 alone gives the market's volume without double counting.
+    yes_ctx = (ctxs or {}).get(f"#{10 * outcome_id}")
+    volume_24h = _parse_volume(yes_ctx)
+
     return OutcomeMarket(
         id=str(outcome_id),
         name=name,
@@ -178,11 +209,14 @@ def normalize_outcome(
         quote_token=raw.get("quoteToken", "USDC"),
         venue=raw.get("venue", ""),
         sides=sides,
+        volume_24h=volume_24h,
     )
 
 
 def normalize_markets(
-    meta: dict[str, Any], mids: dict[str, str]
+    meta: dict[str, Any],
+    mids: dict[str, str],
+    ctxs: dict[str, dict[str, Any]] | None = None,
 ) -> list[OutcomeMarket]:
     """Normalize all outcomes, isolating failures per market.
 
@@ -194,7 +228,7 @@ def normalize_markets(
     for raw in meta.get("outcomes", []):
         try:
             question_spec = question_specs.get(int(raw["outcome"]))
-            markets.append(normalize_outcome(raw, mids, question_spec))
+            markets.append(normalize_outcome(raw, mids, question_spec, ctxs))
         except Exception:
             logger.exception(
                 "Skipping unnormalizable outcome: %r", raw.get("outcome")
@@ -250,11 +284,16 @@ def _build_detail(
     )
 
 def normalize_market_detail(
-    raw: dict[str, Any], mids: dict[str, str], meta: dict[str, Any]
+    raw: dict[str, Any],
+    mids: dict[str, str],
+    meta: dict[str, Any],
+    ctxs: dict[str, dict[str, Any]] | None = None,
 ) -> OutcomeMarketDetail:
     """Build the rich detail model for one live outcome."""
     question_spec = question_specs_by_outcome(meta).get(int(raw["outcome"]))
-    return _build_detail(normalize_outcome(raw, mids, question_spec), meta)
+    return _build_detail(
+        normalize_outcome(raw, mids, question_spec, ctxs), meta
+    )
 
 def normalize_settled_detail(
     settled: dict[str, Any], meta: dict[str, Any]
@@ -352,8 +391,9 @@ if __name__ == "__main__":
             client = HyperliquidClient(http)
             meta = await client.fetch_outcome_meta()
             mids = await client.fetch_all_mids()
+            ctxs = index_outcome_ctxs(await client.fetch_spot_asset_ctxs())
 
-        markets = normalize_markets(meta, mids)
+        markets = normalize_markets(meta, mids, ctxs)
         raw_count = len(meta.get("outcomes", []))
         print(f"normalized {len(markets)} of {raw_count} outcomes\n")
 
@@ -380,5 +420,30 @@ if __name__ == "__main__":
         for m in no_time[:5]:
             print(f"  - {m.id} {m.name}: {m.description[:70]}")
         print(f"fully priced: {len(priced)}; price pairs summing to ~1: {pair_ok}")
+
+        # The volume definition rests on two observed (undocumented)
+        # facts: both sides report the same dayBaseVlm, and the two
+        # sides' notional volumes add up to it. Check every market.
+        with_ctx = 0
+        mismatches: list[str] = []
+        for m in markets:
+            if len(m.sides) != 2:
+                continue
+            c0 = ctxs.get(m.sides[0].coin)
+            c1 = ctxs.get(m.sides[1].coin)
+            if c0 is None or c1 is None:
+                continue
+            with_ctx += 1
+            base0 = float(c0["dayBaseVlm"])
+            base1 = float(c1["dayBaseVlm"])
+            notional = float(c0["dayNtlVlm"]) + float(c1["dayNtlVlm"])
+            if abs(base0 - base1) > 1e-6 or abs(notional - base0) > 0.01 * max(base0, 1.0):
+                mismatches.append(m.id)
+        traded = [m for m in markets if (m.volume_24h or 0) > 0]
+        print(f"\nmarkets with trading context: {with_ctx}; traded in 24h: {len(traded)}")
+        print(f"volume invariant mismatches: {len(mismatches)} {mismatches[:5]}")
+        print("top 5 by 24h volume:")
+        for m in sorted(markets, key=lambda m: m.volume_24h or 0, reverse=True)[:5]:
+            print(f"  {m.volume_24h or 0:>12,.0f}  {m.id:>6}  {m.question[:60]}")
 
     asyncio.run(main())

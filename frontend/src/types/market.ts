@@ -20,6 +20,9 @@ export interface OutcomeMarket {
     quoteToken: string
     venue: string
     sides: OutcomeSide[]
+    // Contracts traded in the last 24h, each settles to $1, thus, 
+    // this is also total USDC traded across both sides. Null when unknown 
+    volume24h: number | null 
 }
 
 export interface QuestionMembership {

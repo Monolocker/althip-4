@@ -1,5 +1,6 @@
 """FastAPI application serving normalized Hyperliquid outcome markets."""
 
+import logging
 import time
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
@@ -13,15 +14,19 @@ from app.models.book import OrderBook
 from app.models.market import OutcomeMarket, OutcomeMarketDetail
 from app.services.hyperliquid import HyperliquidClient, HyperliquidError
 from app.services.normalize import (
+    index_outcome_ctxs,
     normalize_market_detail,
     normalize_markets,
     normalize_order_book,
     normalize_settled_detail,
 )
 
-# One fetch of outcomeMeta costs rate-limit weight 20 (budget: 1200/min).
-# Caching for 15s caps us at ~88 weight/min no matter how many browser
-# tabs are refreshing, and market metadata rarely changes that fast.
+logger = logging.getLogger(__name__)
+
+# One snapshot refresh costs rate-limit weight 42 (budget: 1200/min):
+# outcomeMeta 20 + allMids 2 + spotMetaAndAssetCtxs 20. Caching for 15s
+# caps us at ~168 weight/min no matter how many browser tabs are
+# refreshing, and market metadata rarely changes that fast.
 CACHE_TTL_SECONDS = 15.0
 
 # Order books are constantly changing, but rapid re-clicks on the same markets
@@ -35,10 +40,16 @@ class Snapshot:
     they can never disagree with each other.
     """
 
-    def __init__(self, meta: dict[str, Any], mids: dict[str, str]) -> None:
+    def __init__(
+        self,
+        meta: dict[str, Any],
+        mids: dict[str, str],
+        ctxs: dict[str, dict[str, Any]],
+    ) -> None:
         self.meta = meta
         self.mids = mids
-        self.markets = normalize_markets(meta, mids)
+        self.ctxs = ctxs
+        self.markets = normalize_markets(meta, mids, ctxs)
         self.raw_by_id = {
             str(raw.get("outcome")): raw for raw in meta.get("outcomes", [])
         }
@@ -92,7 +103,15 @@ async def get_snapshot() -> Snapshot:
             return current
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    fresh = Snapshot(meta, mids)
+    # Volume is an enrichment, not a requirement: if this request fails,
+    # serve markets without volume rather than failing the whole list.
+    try:
+        ctxs = index_outcome_ctxs(await client.fetch_spot_asset_ctxs())
+    except HyperliquidError as exc:
+        logger.warning("Serving markets without volume: %s", exc)
+        ctxs = {}
+
+    fresh = Snapshot(meta, mids, ctxs)
     app.state.snapshot = fresh
     return fresh
 
@@ -119,7 +138,9 @@ async def market_detail(market_id: str) -> OutcomeMarketDetail:
     # 1. Live market: served from the snapshot.
     raw = snapshot.raw_by_id.get(market_id)
     if raw is not None:
-        return normalize_market_detail(raw, snapshot.mids, snapshot.meta)
+        return normalize_market_detail(
+            raw, snapshot.mids, snapshot.meta, snapshot.ctxs
+        )
 
     # 2. Previously fetched settled market: served from the permanent cache.
     settled_cache: dict[str, OutcomeMarketDetail] = app.state.settled

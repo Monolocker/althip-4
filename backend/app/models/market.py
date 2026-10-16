@@ -40,6 +40,10 @@ class OutcomeMarket(BaseModel):
     quote_token: str = Field(default="USDC", alias="quoteToken")
     venue: str = ""
     sides: list[OutcomeSide]
+    # Contracts traded in the last 24h (HL dayBaseVlm). Total USDC 
+    # traded across both sides of the outcome market. None when HL
+    # reported no trading context
+    volume_24h: float | None = Field(default=None, alias="volume24h")
 
 
 class QuestionMembership(BaseModel):

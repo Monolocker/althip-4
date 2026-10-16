@@ -3,7 +3,7 @@ import type {
   OutcomeMarketDetail,
 } from '../types/market'
 import { venueLabel } from '../features/markets/discovery'
-import { formatDateTime, formatPrice } from '../utils/format'
+import { formatDateTime, formatPrice, formatVolume } from '../utils/format'
 import OrderBookPanel from './OrderBookPanel'
 
 interface MarketDetailProps {
@@ -63,6 +63,15 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
             <dd>{formatDateTime(market.resolvesBy)}</dd>
           </div>
         )}
+
+        <div>
+          <dt>24h volume</dt>
+          <dd>
+            {market.volume24h === null
+              ? '—'
+              : `${market.volume24h.toLocaleString()} contracts (${formatVolume(market.volume24h)})`}
+          </dd>
+        </div>
 
         <div>
           <dt>Venue</dt>

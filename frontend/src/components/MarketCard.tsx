@@ -1,5 +1,5 @@
 import type { OutcomeMarket } from '../types/market'
-import { formatPrice } from '../utils/format'
+import { formatPrice, formatVolume } from '../utils/format'
 
 interface MarketCardProps {
   market: OutcomeMarket
@@ -39,6 +39,10 @@ function MarketCard({
           </div>
         ))}
       </div>
+
+      <p className="market-card-volume">
+        24h vol {formatVolume(market.volume24h)}
+      </p>
 
       <button
         className="market-select-button"

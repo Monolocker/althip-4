@@ -169,11 +169,9 @@ export function countCloseBuckets(
 // can appear at any time, so a venue is a plain string, not a union,
 // and the list of venues is derived from the data instead of hard-coded.
 
-// The backend sends "" for markets with no venue: Hyperliquid's own
-// protocol-deployed "Recurring" markets, which have no entry in
-// outcomeMeta.deployers. "" is a real value meaning "deployed by
-// Hyperliquid"; it is different from the filter value null, which
-// means "all deployers".
+// The backend sends "" for markets with no venue (Hyperliquid's
+// "Recurring" markets). "" is a real value meaning "no venue"; it is
+// different from the filter value null, which means "all deployers".
 export function venueLabel(venue: string): string {
     return venue === '' ? 'Hyperliquid' : venue
   }
@@ -212,13 +210,14 @@ export function venueLabel(venue: string): string {
 // Sorting
 // ---------------------------------------------------------------
 
-export type SortMode = 'default' | 'soonest' | 'newest'
+export type SortMode = 'default' | 'trending' | 'soonest' | 'newest'
 
 // Display order of the sort options.
-export const SORT_MODES: SortMode[] = ['default', 'soonest', 'newest']
+export const SORT_MODES: SortMode[] = ['default', 'trending', 'soonest', 'newest']
 
 export const SORT_MODE_LABELS: Record<SortMode, string> = {
   default: 'Recommended',
+  trending: 'Trending (24h volume)',
   soonest: 'Happening soonest',
   newest: 'Newest',
 }
@@ -284,6 +283,19 @@ function compareNewest(a: OutcomeMarket, b: OutcomeMarket): number {
   return Number(b.id) - Number(a.id)
 }
 
+// Trending (decision from Milestone 17.5): highest 24h volume first.
+// Unknown volume (null) sorts after every known volume, including 0:
+// "no trades" is information, "no data" is not.
+function compareTrending(a: OutcomeMarket, b: OutcomeMarket): number {
+    if (a.volume24h !== null && b.volume24h !== null) {
+      return b.volume24h - a.volume24h
+    }
+    if (a.volume24h !== null) return -1
+    if (b.volume24h !== null) return 1
+    return 0
+  }
+
+
 export function sortMarkets(
   markets: OutcomeMarket[],
   mode: SortMode,
@@ -296,6 +308,8 @@ export function sortMarkets(
   switch (mode) {
     case 'default':
       return sorted.sort(compareDefault)
+    case 'trending':
+        return sorted.sort(compareTrending)
     case 'soonest':
       return sorted.sort((a, b) => compareSoonest(a, b, now))
     case 'newest':
