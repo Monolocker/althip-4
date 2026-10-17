@@ -1,6 +1,7 @@
 """Normalization layer: Raw HL data -> app domain model"""
 
 import logging 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -82,23 +83,155 @@ def resolve_times(
     return event_at, resolves_by
 
 
-def question_specs_by_outcome(meta: dict[str, Any]) -> dict[int, dict[str, str]]:
-    """Map each question member's outcome id to its question's parsed spec.
+def questions_by_outcome(meta: dict[str, Any]) -> dict[int, dict[str, Any]]:
+    """Map each question member's outcome id to its raw parent question.
 
     Multi-outcome question members (e.g. "participant:Buffalo Bills")
-    carry no times of their own; the question they belong to does.
+    carry neither times nor a readable title of their own; the question
+    they belong to does.
     """
-    index: dict[int, dict[str, str]] = {}
+    index: dict[int, dict[str, Any]] = {}
     for question in meta.get("questions", []):
-        spec = parse_spec(question.get("description", ""))
         members = [*question.get("namedOutcomes", []), question.get("fallbackOutcome")]
         for member in members:
             try:
-                index[int(member)] = spec
+                index[int(member)] = question
             except (TypeError, ValueError):
                 # None (no fallback outcome) or a malformed id: skip it.
                 continue
     return index
+
+
+# ---------------------------------------------------------------
+# Templates (Milestone 18.1)
+# ---------------------------------------------------------------
+# Every deployer-created market comes from a validator-approved template
+# whose `name` is a display title with {placeholders}, e.g.
+# "{perp} above {threshold} at {time}?". Filling those placeholders with
+# the market's own spec values gives Hyperliquid's approved wording
+# instead of wording we invented.
+
+PLACEHOLDER = re.compile(r"\{(\w+)\}")
+
+# Placeholder values in HL's YYYYMMDD-HHMM format get rendered readably.
+TIMESTAMP_KEYS = frozenset((*EVENT_TIME_KEYS, *DEADLINE_KEYS))
+
+# Outcomes the protocol creates for each question ("other"); they have
+# no template of their own.
+FALLBACK_OUTCOME_NAME = "template fallback"
+
+
+def index_templates(raw: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """outcomeTemplates list -> {template id: template}."""
+    return {
+        str(t["id"]): t for t in raw if isinstance(t, dict) and "id" in t
+    }
+
+
+def template_id(name: str) -> str | None:
+    """'template:binaryPrice' -> 'binaryPrice'; non-template names -> None."""
+    prefix = "template:"
+    return name[len(prefix):] if name.startswith(prefix) else None
+
+
+def _format_value(key: str, value: str) -> str:
+    if key in TIMESTAMP_KEYS:
+        parsed = parse_hl_timestamp(value)
+        if parsed is not None:
+            return parsed.strftime("%b %d, %Y %H:%M UTC")
+    return value
+
+
+def render_template(text: str, values: dict[str, str]) -> str | None:
+    """Fill every {placeholder} in `text` from `values`.
+
+    All or nothing: if any placeholder has no value, return None so the
+    caller falls back, rather than showing a half-filled "{shortNameA}".
+    """
+    keys = PLACEHOLDER.findall(text)
+    if any(key not in values for key in keys):
+        return None
+    return PLACEHOLDER.sub(
+        lambda match: _format_value(match.group(1), values[match.group(1)]),
+        text,
+    )
+
+
+def _lookup_template(
+    name: str, templates: dict[str, dict[str, Any]]
+) -> dict[str, Any] | None:
+    tid = template_id(name)
+    return templates.get(tid) if tid is not None else None
+
+
+def _question_title(
+    question: dict[str, Any] | None,
+    question_spec: dict[str, str],
+    templates: dict[str, dict[str, Any]],
+) -> str | None:
+    """Rendered title of a parent question, e.g. 'NBA Week 1: Spurs v Suns'."""
+    if question is None:
+        return None
+    template = _lookup_template(question.get("name", ""), templates)
+    if template is None:
+        return None
+    return render_template(template.get("name", ""), question_spec)
+
+
+def template_question(
+    name: str,
+    values: dict[str, str],
+    question: dict[str, Any] | None,
+    question_spec: dict[str, str],
+    templates: dict[str, dict[str, Any]],
+) -> str | None:
+    """Display title from the market's template, or None to fall back.
+
+    A question member's own title is only part of the story ("Draw"), so
+    it is joined with its parent question's title.
+    """
+    if name == FALLBACK_OUTCOME_NAME:
+        parent = _question_title(question, question_spec, templates)
+        return f"Other — {parent}" if parent is not None else None
+
+    template = _lookup_template(name, templates)
+    if template is None:
+        return None
+    own = render_template(template.get("name", ""), values)
+    if own is None:
+        return None
+
+    role = template.get("role")
+    if isinstance(role, dict) and "questionOutcome" in role:
+        parent = _question_title(question, question_spec, templates)
+        return f"{own} — {parent}" if parent is not None else own
+    return own
+
+
+def template_side_names(
+    name: str, values: dict[str, str], templates: dict[str, dict[str, Any]]
+) -> list[str] | None:
+    """Rendered side names for standalone markets, e.g. ["SAS", "PHX"].
+
+    The template defines what each side means: for sportsContestWinner,
+    side 0 is {shortNameA} and side 1 is {shortNameB}, not Yes/No.
+    """
+    template = _lookup_template(name, templates)
+    if template is None:
+        return None
+    role = template.get("role")
+    if not isinstance(role, dict):
+        return None
+    standalone = role.get("standaloneOutcome")
+    if not isinstance(standalone, dict):
+        return None
+    side_names = standalone.get("sideNames")
+    if not isinstance(side_names, list):
+        return None
+    rendered = [render_template(str(side), values) for side in side_names]
+    if any(label is None for label in rendered):
+        return None
+    return [label for label in rendered if label is not None]
 
 
 def index_outcome_ctxs(ctxs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -156,25 +289,39 @@ def build_question(name: str, spec: dict[str, str], event_at: datetime | None) -
 def normalize_outcome(
     raw: dict[str, Any],
     mids: dict[str, str],
-    question_spec: dict[str, str] | None = None,
+    question: dict[str, Any] | None = None,
     ctxs: dict[str, dict[str, Any]] | None = None,
+    templates: dict[str, dict[str, Any]] | None = None,
 ) -> OutcomeMarket:
     """Convert one raw Hyperliquid outcome + mid prices into our model.
 
-    `question_spec` is the parsed spec of the question this outcome
-    belongs to, if any; it supplies times the outcome itself lacks.
+    `question` is the raw parent question this outcome belongs to, if
+    any; it supplies times and title text the outcome itself lacks.
     `ctxs` are outcome-coin trading contexts (see index_outcome_ctxs);
     None or a missing coin simply leaves volume unknown.
+    `templates` (see index_templates) supply approved display wording;
+    without them, titles fall back to build_question or the raw spec.
     """
     outcome_id = int(raw["outcome"])
     description = raw.get("description", "")
     spec = parse_spec(description)
+    question_spec = (
+        parse_spec(question.get("description", "")) if question else {}
+    )
 
     # Outcome keys override question keys: the more specific spec wins.
-    event_at, resolves_by = resolve_times({**(question_spec or {}), **spec})
+    values = {**question_spec, **spec}
+    event_at, resolves_by = resolve_times(values)
 
     name = raw.get("name", "")
-    question = build_question(name, spec, event_at) or description or name
+    templates = templates or {}
+    title = (
+        template_question(name, values, question, question_spec, templates)
+        or build_question(name, spec, event_at)
+        or description
+        or name
+    )
+    side_names = template_side_names(name, values, templates)
 
     sides: list[OutcomeSide] = []
     for index, side_spec in enumerate(raw.get("sideSpecs", [])[:2]):
@@ -187,7 +334,11 @@ def normalize_outcome(
         sides.append(
             OutcomeSide(
                 index=index,
-                label=clean_label(side_spec.get("name", f"Side {index}")),
+                label=(
+                    side_names[index]
+                    if side_names is not None and index < len(side_names)
+                    else clean_label(side_spec.get("name", f"Side {index}"))
+                ),
                 coin=coin,
                 price=price,
             )
@@ -201,7 +352,7 @@ def normalize_outcome(
     return OutcomeMarket(
         id=str(outcome_id),
         name=name,
-        question=question,
+        question=title,
         description=description,
         status="open",
         event_at=event_at,
@@ -217,18 +368,21 @@ def normalize_markets(
     meta: dict[str, Any],
     mids: dict[str, str],
     ctxs: dict[str, dict[str, Any]] | None = None,
+    templates: dict[str, dict[str, Any]] | None = None,
 ) -> list[OutcomeMarket]:
     """Normalize all outcomes, isolating failures per market.
 
     One malformed market is logged and skipped; it must never prevent
     the other 41 from being served.
     """
-    question_specs = question_specs_by_outcome(meta)
+    questions = questions_by_outcome(meta)
     markets: list[OutcomeMarket] = []
     for raw in meta.get("outcomes", []):
         try:
-            question_spec = question_specs.get(int(raw["outcome"]))
-            markets.append(normalize_outcome(raw, mids, question_spec, ctxs))
+            question = questions.get(int(raw["outcome"]))
+            markets.append(
+                normalize_outcome(raw, mids, question, ctxs, templates)
+            )
         except Exception:
             logger.exception(
                 "Skipping unnormalizable outcome: %r", raw.get("outcome")
@@ -288,15 +442,18 @@ def normalize_market_detail(
     mids: dict[str, str],
     meta: dict[str, Any],
     ctxs: dict[str, dict[str, Any]] | None = None,
+    templates: dict[str, dict[str, Any]] | None = None,
 ) -> OutcomeMarketDetail:
     """Build the rich detail model for one live outcome."""
-    question_spec = question_specs_by_outcome(meta).get(int(raw["outcome"]))
+    question = questions_by_outcome(meta).get(int(raw["outcome"]))
     return _build_detail(
-        normalize_outcome(raw, mids, question_spec, ctxs), meta
+        normalize_outcome(raw, mids, question, ctxs, templates), meta
     )
 
 def normalize_settled_detail(
-    settled: dict[str, Any], meta: dict[str, Any]
+    settled: dict[str, Any],
+    meta: dict[str, Any],
+    templates: dict[str, dict[str, Any]] | None = None,
 ) -> OutcomeMarketDetail:
     """Build the detail model for the settled outcome
     
@@ -305,11 +462,12 @@ def normalize_settled_detail(
     both prices are None.
     """
     # A settled outcome's question may itself be gone from outcomeMeta;
-    # then question members simply have no times, which is acceptable.
-    question_spec = question_specs_by_outcome(meta).get(
-        int(settled["spec"]["outcome"])
+    # then question members simply have no times or parent title, which
+    # is acceptable.
+    question = questions_by_outcome(meta).get(int(settled["spec"]["outcome"]))
+    base = normalize_outcome(
+        settled["spec"], mids={}, question=question, templates=templates
     )
-    base = normalize_outcome(settled["spec"], mids={}, question_spec=question_spec)
     base = base.model_copy(update={"status": "settled"})
 
     try:
@@ -381,6 +539,7 @@ def normalize_order_book(raw: dict[str, Any], side_index: int) -> OrderBook:
 if __name__ == "__main__":
     # Standalone verification: full pipeline against live mainnet.
     import asyncio
+    from collections import Counter
 
     import httpx
 
@@ -392,8 +551,9 @@ if __name__ == "__main__":
             meta = await client.fetch_outcome_meta()
             mids = await client.fetch_all_mids()
             ctxs = index_outcome_ctxs(await client.fetch_spot_asset_ctxs())
+            templates = index_templates(await client.fetch_outcome_templates())
 
-        markets = normalize_markets(meta, mids, ctxs)
+        markets = normalize_markets(meta, mids, ctxs, templates)
         raw_count = len(meta.get("outcomes", []))
         print(f"normalized {len(markets)} of {raw_count} outcomes\n")
 
@@ -445,5 +605,33 @@ if __name__ == "__main__":
         print("top 5 by 24h volume:")
         for m in sorted(markets, key=lambda m: m.volume_24h or 0, reverse=True)[:5]:
             print(f"  {m.volume_24h or 0:>12,.0f}  {m.id:>6}  {m.question[:60]}")
+
+        # Milestone 18.1: which markets got template wording, and one
+        # sample title + side labels per raw name.
+        questions = questions_by_outcome(meta)
+        no_template: Counter[str] = Counter()
+        samples: dict[str, OutcomeMarket] = {}
+        markets_by_id = {m.id: m for m in markets}
+        for raw in meta.get("outcomes", []):
+            m = markets_by_id.get(str(raw.get("outcome")))
+            if m is None:
+                continue
+            name = raw.get("name", "")
+            question = questions.get(int(raw["outcome"]))
+            question_spec = (
+                parse_spec(question.get("description", "")) if question else {}
+            )
+            values = {**question_spec, **parse_spec(raw.get("description", ""))}
+            if template_question(name, values, question, question_spec, templates) is None:
+                no_template[name] += 1
+            samples.setdefault(name, m)
+        print(f"\ntemplates loaded: {len(templates)}")
+        print(f"markets without template wording: {sum(no_template.values())}")
+        for name, count in no_template.most_common():
+            print(f"  {count:4d}  {name}")
+        print("one sample per market kind (title | side labels):")
+        for name, m in samples.items():
+            labels = " / ".join(side.label for side in m.sides)
+            print(f"  [{name}]\n      {m.question[:110]}\n      sides: {labels}")
 
     asyncio.run(main())

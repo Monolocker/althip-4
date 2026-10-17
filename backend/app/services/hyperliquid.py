@@ -74,10 +74,29 @@ class HyperliquidClient:
             isinstance(data, list) and len(data) == 2 and isinstance (data[1], list)
         ):
             raise HyperliquidError(
-                "Unexepected spotMetaAndAssetCtxs response shape: "
+                "Unexpected spotMetaAndAssetCtxs response shape: "
                 f"{type(data).__name__}"
             )
         return data[1]
+    
+    async def fetch_outcome_templates(self) -> list[dict[str, Any]]:
+        """Fetch validator-approved templates every HIP-4 market comes from.
+        
+        Verified live shape example:
+        {"id": "binaryPrice",
+         "name": "{perp} above {threshold} at {time}?",
+         "description": "The market resolves to Yes if ...",
+         "keywords": [...],
+         "role": {"standaloneOutcome": {"sideNames": ["Yes", "No"]}}}
+        role is also {"questionOutcome": {"parent": "<question template id>"}}
+        or the string "question".
+        """
+        data = await self._post_info({"type": "outcomeTemplates"})
+        if not isinstance(data, list):
+            raise HyperliquidError(
+                f"Unexpected outcomeTemplates reponse shape: {type(data).__name__}"
+            )
+        return data
     
     async def fetch_settled_outcome(
         self, outcome_id: int

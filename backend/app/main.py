@@ -15,6 +15,7 @@ from app.models.market import OutcomeMarket, OutcomeMarketDetail
 from app.services.hyperliquid import HyperliquidClient, HyperliquidError
 from app.services.normalize import (
     index_outcome_ctxs,
+    index_templates,
     normalize_market_detail,
     normalize_markets,
     normalize_order_book,
@@ -28,6 +29,10 @@ logger = logging.getLogger(__name__)
 # caps us at ~168 weight/min no matter how many browser tabs are
 # refreshing, and market metadata rarely changes that fast.
 CACHE_TTL_SECONDS = 15.0
+
+# Templates change only through validator governance votes, so an hourly
+# refresh is plenty.
+TEMPLATES_TTL_SECONDS = 3600.0
 
 # Order books are constantly changing, but rapid re-clicks on the same markets
 # shouldn't each cost an upstream request. l2Book info request is weight 2
@@ -45,11 +50,13 @@ class Snapshot:
         meta: dict[str, Any],
         mids: dict[str, str],
         ctxs: dict[str, dict[str, Any]],
+        templates: dict[str, dict[str, Any]],
     ) -> None:
         self.meta = meta
         self.mids = mids
         self.ctxs = ctxs
-        self.markets = normalize_markets(meta, mids, ctxs)
+        self.templates = templates
+        self.markets = normalize_markets(meta, mids, ctxs, templates)
         self.raw_by_id = {
             str(raw.get("outcome")): raw for raw in meta.get("outcomes", [])
         }
@@ -65,6 +72,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.http = httpx.AsyncClient()
     app.state.hyperliquid = HyperliquidClient(app.state.http)
     app.state.snapshot = None
+    # (fetched_at_monotonic, {template id: template}) or None
+    app.state.templates = None
     # Settled markets never change, so this cache has no expiry.
     app.state.settled = {}
     # coin -> (fetched_at_monotonic, OrderBook)
@@ -84,6 +93,27 @@ app.add_middleware(
     allow_methods=["GET"],
     allow_headers=["*"],
 )
+
+
+async def get_templates() -> dict[str, dict[str, Any]]:
+    """Return outcome templates, refetching at most once an hour.
+
+    Templates are an enrichment: on failure, keep using the last good
+    set, or none at all (titles then fall back to the old wording).
+    """
+    cached: tuple[float, dict[str, dict[str, Any]]] | None = app.state.templates
+    if cached is not None and time.monotonic() - cached[0] < TEMPLATES_TTL_SECONDS:
+        return cached[1]
+
+    client: HyperliquidClient = app.state.hyperliquid
+    try:
+        templates = index_templates(await client.fetch_outcome_templates())
+    except HyperliquidError as exc:
+        logger.warning("Outcome templates unavailable: %s", exc)
+        return cached[1] if cached is not None else {}
+
+    app.state.templates = (time.monotonic(), templates)
+    return templates
 
 
 async def get_snapshot() -> Snapshot:
@@ -111,7 +141,9 @@ async def get_snapshot() -> Snapshot:
         logger.warning("Serving markets without volume: %s", exc)
         ctxs = {}
 
-    fresh = Snapshot(meta, mids, ctxs)
+    templates = await get_templates()
+
+    fresh = Snapshot(meta, mids, ctxs, templates)
     app.state.snapshot = fresh
     return fresh
 
@@ -139,7 +171,7 @@ async def market_detail(market_id: str) -> OutcomeMarketDetail:
     raw = snapshot.raw_by_id.get(market_id)
     if raw is not None:
         return normalize_market_detail(
-            raw, snapshot.mids, snapshot.meta, snapshot.ctxs
+            raw, snapshot.mids, snapshot.meta, snapshot.ctxs, snapshot.templates
         )
 
     # 2. Previously fetched settled market: served from the permanent cache.
@@ -166,7 +198,7 @@ async def market_detail(market_id: str) -> OutcomeMarketDetail:
             status_code=404, detail=f"Market {market_id} not found"
         )
 
-    detail = normalize_settled_detail(settled, snapshot.meta)
+    detail = normalize_settled_detail(settled, snapshot.meta, snapshot.templates)
     settled_cache[market_id] = detail
     return detail
 
