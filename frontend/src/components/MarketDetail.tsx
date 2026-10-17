@@ -3,8 +3,9 @@ import type {
   OutcomeMarketDetail,
 } from '../types/market'
 import { venueLabel } from '../features/markets/discovery'
-import { formatDateTime, formatPrice, formatVolume } from '../utils/format'
+import { formatPrice, formatVolume } from '../utils/format'
 import OrderBookPanel from './OrderBookPanel'
+import TimeValue from './TimeValue'
 
 interface MarketDetailProps {
   market: OutcomeMarket
@@ -54,13 +55,17 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
 
         <div>
           <dt>Event</dt>
-          <dd>{formatDateTime(market.eventAt)}</dd>
+          <dd>
+            <TimeValue value={market.eventAt} />
+          </dd>
         </div>
 
         {market.resolvesBy !== market.eventAt && (
           <div>
             <dt>Resolves by</dt>
-            <dd>{formatDateTime(market.resolvesBy)}</dd>
+            <dd>
+              <TimeValue value={market.resolvesBy} />
+            </dd>
           </div>
         )}
 
@@ -144,7 +149,6 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
       {detail !== null && Object.keys(detail.spec).length > 0 && (
         <section className="detail-section">
           <h3>Market spec</h3>
-
 
           <dl className="market-metadata">
             {Object.entries(detail.spec).map(([key, value]) => (

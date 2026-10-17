@@ -596,3 +596,16 @@ button {
   font-weight: 600;
   cursor: pointer;
 }
+
+/* Milestone 18.2: UTC-first times with local time underneath */
+
+.time-utc {
+  display: block;
+}
+
+.time-local {
+  display: block;
+  margin-top: 0.15rem;
+  color: #777;
+  font-size: 0.8rem;
+}
