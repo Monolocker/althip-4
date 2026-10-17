@@ -574,3 +574,25 @@ button {
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
 }
+
+
+/* Milestone 18.1b: resolution rules */
+
+.rules-text {
+  margin: 0.75rem 0 0;
+  line-height: 1.55;
+  white-space: pre-line;
+}
+
+.rules-parent {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.rules-parent summary {
+  font-weight: 600;
+  cursor: pointer;
+}

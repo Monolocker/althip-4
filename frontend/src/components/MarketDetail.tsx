@@ -116,6 +116,31 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
         <p className="detail-note">Loading additional details…</p>
       )}
 
+      {detail !== null &&
+        (detail.rules !== null || detail.questionGroup?.rules != null) && (
+          <section className="detail-section">
+            <h3>Resolution rules</h3>
+            <p className="detail-note">
+              Rendered from Hyperliquid's validator-approved market template.
+            </p>
+
+            {detail.rules !== null && (
+              <p className="rules-text">{detail.rules}</p>
+            )}
+
+            {detail.questionGroup?.rules != null && (
+              <details className="rules-parent" open={detail.rules === null}>
+                <summary>
+                  Rules for the whole question
+                  {detail.questionGroup.title !== null &&
+                    `: ${detail.questionGroup.title}`}
+                </summary>
+                <p className="rules-text">{detail.questionGroup.rules}</p>
+              </details>
+            )}
+          </section>
+        )}
+
       {detail !== null && (
         <section className="detail-section">
           <h3>Market spec</h3>
@@ -140,7 +165,7 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
           <dl className="market-metadata">
             <div>
               <dt>Question</dt>
-              <dd>{detail.questionGroup.name}</dd>
+              <dd>{detail.questionGroup.title ?? detail.questionGroup.name}</dd>
             </div>
 
             <div>

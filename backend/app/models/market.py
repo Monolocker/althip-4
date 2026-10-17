@@ -57,9 +57,13 @@ class QuestionMembership(BaseModel):
     is_fallback: bool = Field(alias="isFallback")
     # Other outcomes belonging to the same question, excluding this one.
     sibling_ids: list[str] = Field(alias="siblingIds")
+    # Rendered from the question's template (M18.1b); None when the 
+    # template is unknown or a placeholder has no value
+    title: str | None = None
+    rules: str | None = None
 
 
-class Settlement(BaseModel):
+class Settlement(BaseModel): 
     """How a settled market resolved."""
 
     model_config = ConfigDict(populate_by_name=True)
@@ -80,3 +84,6 @@ class OutcomeMarketDetail(OutcomeMarket):
         default=None, alias="questionGroup"
     )
     settlement: Settlement | None = None  # present only when status is settled
+    # This market's resolution rules, rendered from its template's
+    # description (M18.1b). None w/o a template
+    rules: str | None = None

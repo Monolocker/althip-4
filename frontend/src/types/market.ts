@@ -31,6 +31,9 @@ export interface QuestionMembership {
     description: string
     isFallback: boolean
     siblingIds: string[]
+    // Rendered from the question's template; null when unavailable 
+    title: string | null
+    rules: string | null
 }
 
 export interface Settlement {
@@ -44,4 +47,6 @@ export interface Settlement {
     deployer: string | null
     questionGroup: QuestionMembership | null
     settlement: Settlement | null
+    // This market's own resolution rules from its template, if any
+    rules: string | null
   }

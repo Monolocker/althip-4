@@ -208,6 +208,16 @@ def template_question(
     return own
 
 
+def template_rules(
+    name: str, values: dict[str, str], templates: dict[str, dict[str, Any]]
+) -> str | None:
+    """A market's resolution rules: its template's description, filled in."""
+    template = _lookup_template(name, templates)
+    if template is None:
+        return None
+    return render_template(template.get("description", ""), values)
+
+
 def template_side_names(
     name: str, values: dict[str, str], templates: dict[str, dict[str, Any]]
 ) -> list[str] | None:
@@ -390,7 +400,9 @@ def normalize_markets(
     return markets
 
 def find_question_membership(
-    outcome_id: int, meta: dict[str, Any]
+    outcome_id: int,
+    meta: dict[str, Any],
+    templates: dict[str, dict[str, Any]] | None = None,
 ) -> QuestionMembership | None:
     """Find the question this outcome belongs to, if any.
 
@@ -398,6 +410,7 @@ def find_question_membership(
     fallbackOutcome); outcomes do not point back at their question,
     so we search from the question side.
     """
+    templates = templates or {}
     for question in meta.get("questions", []):
         named = [int(x) for x in question.get("namedOutcomes", [])]
         fallback = question.get("fallbackOutcome")
@@ -405,12 +418,17 @@ def find_question_membership(
         members = named + ([fallback_id] if fallback_id is not None else [])
 
         if outcome_id in members:
+            question_spec = parse_spec(question.get("description", ""))
             return QuestionMembership(
                 question_id=str(question.get("question")),
                 name=question.get("name", ""),
                 description=question.get("description", ""),
                 is_fallback=(outcome_id == fallback_id),
                 sibling_ids=[str(m) for m in members if m != outcome_id],
+                title=_question_title(question, question_spec, templates),
+                rules=template_rules(
+                    question.get("name", ""), question_spec, templates
+                ),
             )
     return None
 
@@ -427,15 +445,26 @@ def _build_detail(
     base: OutcomeMarket,
     meta: dict[str, Any],
     settlement: Settlement | None = None,
+    templates: dict[str, dict[str, Any]] | None = None,
 ) -> OutcomeMarketDetail:
     """Assemble the detail model from a base market plus derived data."""
+    templates = templates or {}
+    spec = parse_spec(base.description)
+    question = questions_by_outcome(meta).get(int(base.id))
+    question_spec = (
+        parse_spec(question.get("description", "")) if question else {}
+    )
+    # Same merge as normalize_outcome: outcome keys win over question keys.
+    values = {**question_spec, **spec}
     return OutcomeMarketDetail(
         **base.model_dump(),
-        spec=parse_spec(base.description),
+        spec=spec,
         deployer=find_deployer(base.venue, meta),
-        question_group=find_question_membership(int(base.id), meta),
+        question_group=find_question_membership(int(base.id), meta, templates),
         settlement=settlement,
+        rules=template_rules(base.name, values, templates),
     )
+
 
 def normalize_market_detail(
     raw: dict[str, Any],
@@ -447,7 +476,9 @@ def normalize_market_detail(
     """Build the rich detail model for one live outcome."""
     question = questions_by_outcome(meta).get(int(raw["outcome"]))
     return _build_detail(
-        normalize_outcome(raw, mids, question, ctxs, templates), meta
+        normalize_outcome(raw, mids, question, ctxs, templates), 
+        meta,
+        templates=templates,
     )
 
 def normalize_settled_detail(
@@ -486,7 +517,7 @@ def normalize_settled_detail(
         details=str(settled.get("details", "")),
         winning_side_index=winner,
     )
-    return _build_detail(base, meta, settlement)
+    return _build_detail(base, meta, settlement, templates)
 
 def _parse_levels(raw_levels: Any) -> list[BookLevel]:
     """Convert raw {"px", "sz", "n"} dicts into BookLevels, skipping bad ones"""
@@ -608,8 +639,11 @@ if __name__ == "__main__":
 
         # Milestone 18.1: which markets got template wording, and one
         # sample title + side labels per raw name.
+                # Milestone 18.1: which markets got template wording, and one
+        # sample title + side labels per raw name.
         questions = questions_by_outcome(meta)
         no_template: Counter[str] = Counter()
+        no_rules: Counter[str] = Counter()
         samples: dict[str, OutcomeMarket] = {}
         markets_by_id = {m.id: m for m in markets}
         for raw in meta.get("outcomes", []):
@@ -624,10 +658,16 @@ if __name__ == "__main__":
             values = {**question_spec, **parse_spec(raw.get("description", ""))}
             if template_question(name, values, question, question_spec, templates) is None:
                 no_template[name] += 1
+            if template_rules(name, values, templates) is None:
+                no_rules[name] += 1
             samples.setdefault(name, m)
         print(f"\ntemplates loaded: {len(templates)}")
         print(f"markets without template wording: {sum(no_template.values())}")
         for name, count in no_template.most_common():
+            print(f"  {count:4d}  {name}")
+        # Milestone 18.1b: rules need EVERY description placeholder filled.
+        print(f"markets without own resolution rules: {sum(no_rules.values())}")
+        for name, count in no_rules.most_common():
             print(f"  {count:4d}  {name}")
         print("one sample per market kind (title | side labels):")
         for name, m in samples.items():

@@ -307,12 +307,12 @@ export function sortMarkets(
 
   switch (mode) {
     case 'default':
-      return sorted.sort(compareDefault)
+        return sorted.sort(compareDefault)
     case 'trending':
         return sorted.sort(compareTrending)
     case 'soonest':
-      return sorted.sort((a, b) => compareSoonest(a, b, now))
+        return sorted.sort((a, b) => compareSoonest(a, b, now))
     case 'newest':
-      return sorted.sort(compareNewest)
+        return sorted.sort(compareNewest)
   }
 }
