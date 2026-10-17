@@ -120,6 +120,12 @@ TIMESTAMP_KEYS = frozenset((*EVENT_TIME_KEYS, *DEADLINE_KEYS))
 # no template of their own.
 FALLBACK_OUTCOME_NAME = "template fallback"
 
+# Template descriptions end with machine-readable metadata, e.g.
+# "metadata=category:sports|subCategory:Basketball|semanticRestriction:..."
+# It describes the template, not the market's rules, so it is cut from
+# the displayed rules.
+METADATA_MARKER = "metadata="
+
 
 def index_templates(raw: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """outcomeTemplates list -> {template id: template}."""
@@ -134,11 +140,12 @@ def template_id(name: str) -> str | None:
     return name[len(prefix):] if name.startswith(prefix) else None
 
 
-def _format_value(key: str, value: str) -> str:
+def _format_value(key: str, value: str, add_utc: bool) -> str:
     if key in TIMESTAMP_KEYS:
         parsed = parse_hl_timestamp(value)
         if parsed is not None:
-            return parsed.strftime("%b %d, %Y %H:%M UTC")
+            suffix = " UTC" if add_utc else ""
+            return parsed.strftime("%b %d, %Y %H:%M") + suffix
     return value
 
 
@@ -151,10 +158,15 @@ def render_template(text: str, values: dict[str, str]) -> str | None:
     keys = PLACEHOLDER.findall(text)
     if any(key not in values for key in keys):
         return None
-    return PLACEHOLDER.sub(
-        lambda match: _format_value(match.group(1), values[match.group(1)]),
-        text,
-    )
+
+    def replace(match: re.Match[str]) -> str:
+        # Some templates already write "{scheduledStart} UTC"; adding our
+        # own suffix there would produce "... 17:00 UTC UTC".
+        already_labeled = text.startswith(" UTC", match.end())
+        key = match.group(1)
+        return _format_value(key, values[key], add_utc=not already_labeled)
+
+    return PLACEHOLDER.sub(replace, text)
 
 
 def _lookup_template(
@@ -192,7 +204,9 @@ def template_question(
     """
     if name == FALLBACK_OUTCOME_NAME:
         parent = _question_title(question, question_spec, templates)
-        return f"Other — {parent}" if parent is not None else None
+        # Labeled "Fallback", not "Other": some questions also have a named
+        # outcome called "Other" (awardOther), and the two must not look alike.
+        return f"Fallback — {parent}" if parent is not None else None
 
     template = _lookup_template(name, templates)
     if template is None:
@@ -215,7 +229,12 @@ def template_rules(
     template = _lookup_template(name, templates)
     if template is None:
         return None
-    return render_template(template.get("description", ""), values)
+    rules = render_template(template.get("description", ""), values)
+    if rules is None:
+        return None
+    # partition() splits at the first marker; text after it is metadata.
+    before, _, _ = rules.partition(METADATA_MARKER)
+    return before.rstrip() or None
 
 
 def template_side_names(

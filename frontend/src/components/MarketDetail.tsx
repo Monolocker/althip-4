@@ -141,9 +141,10 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
           </section>
         )}
 
-      {detail !== null && (
+      {detail !== null && Object.keys(detail.spec).length > 0 && (
         <section className="detail-section">
           <h3>Market spec</h3>
+
 
           <dl className="market-metadata">
             {Object.entries(detail.spec).map(([key, value]) => (
