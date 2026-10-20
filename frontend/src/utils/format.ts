@@ -5,6 +5,18 @@ export function formatPrice(price: number | null): string {
   return `${(price * 100).toFixed(1)}¢`
 }
 
+// Book prices carry up to 5 decimal points (0.21578 = 21.578 cents), so a one-tick
+// spread is 0.001. formatPirce's single decimal would show such a book as
+// "21.6¢ / 21.6¢, spread 0.0¢". Up to 3 decimals, trailing zeros cut:
+// 0.21578 -> "21.578¢", 0.3 -> "30¢", 0.00049 -> "0.049¢".
+export function formatPrecisePrice(price: number | null): string {
+  if (price === null) {
+    return "—"
+  }
+  const cents = (price * 100).toFixed(3).replace(/\.?0+$/, "")
+  return `${cents}¢`
+}
+
 // 21876 -> "21.9K", 1250000 -> "1.3M". Compact on purpose: volume is
 // for comparing markets at a glance, not for accounting.
 const compactNumber = new Intl.NumberFormat(undefined, {

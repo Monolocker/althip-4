@@ -1,5 +1,6 @@
 import type { OutcomeMarket } from '../types/market'
 import { formatPrice, formatVolume } from '../utils/format'
+import BookQualityNote from './BookQualityNote'
 
 interface MarketCardProps {
   market: OutcomeMarket
@@ -12,6 +13,10 @@ function MarketCard({
   isSelected,
   onSelect,
 }: MarketCardProps) {
+  // Milestone 18.3: an unreliable book makes both sides' prices
+  // meaningless (the two sides share one merged book).
+  const unreliable = market.book?.quality === 'unreliable'
+
   return (
     <article
       className={
@@ -28,7 +33,13 @@ function MarketCard({
         <h3>{market.question}</h3>
       </div>
 
-      <div className="market-card-outcomes">
+      <div
+        className={
+          unreliable
+            ? 'market-card-outcomes market-card-outcomes--unreliable'
+            : 'market-card-outcomes'
+        }
+      >
         {market.sides.map((side) => (
           <div
             className="market-card-outcome"
@@ -39,6 +50,8 @@ function MarketCard({
           </div>
         ))}
       </div>
+
+      <BookQualityNote book={market.book} />
 
       <p className="market-card-volume">
         24h vol {formatVolume(market.volume24h)}

@@ -3,7 +3,8 @@ import type {
   OutcomeMarketDetail,
 } from '../types/market'
 import { venueLabel } from '../features/markets/discovery'
-import { formatPrice, formatVolume } from '../utils/format'
+import { formatPrice, formatTime, formatVolume } from '../utils/format'
+import BookQualityNote from './BookQualityNote'
 import OrderBookPanel from './OrderBookPanel'
 import TimeValue from './TimeValue'
 
@@ -97,7 +98,13 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
       <section className="detail-section">
         <h3>Outcomes</h3>
 
-        <div className="detail-outcomes">
+        <div
+          className={
+            market.book?.quality === 'unreliable'
+              ? 'detail-outcomes detail-outcomes--unreliable'
+              : 'detail-outcomes'
+          }
+        >
           {market.sides.map((side) => (
             <article
               className="detail-outcome-card"
@@ -109,6 +116,15 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
             </article>
           ))}
         </div>
+        <BookQualityNote book={market.book} />
+
+        {market.book !== null && (
+          <p className="detail-note">
+            {market.book.source === 'mark'
+              ? 'Inferred from the market never having traded; a full order book check is pending.'
+              : `Book quality from a background check at ${formatTime(market.book.checkedAt)?.utc ?? 'an unknown time'}, refreshed every few minutes. The live order book below is current.`}
+          </p>
+        )}
       </section>
 
       {detailError !== null && (

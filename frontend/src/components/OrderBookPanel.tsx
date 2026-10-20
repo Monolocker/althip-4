@@ -3,7 +3,7 @@ import { subscribeToOrderBook, type SocketStatus } from '../api/hlSocket'
 import { fetchOrderBook } from '../api/markets'
 import type { BookLevel, OrderBook } from '../types/book'
 import type { OutcomeSide } from '../types/market'
-import { formatPrice } from '../utils/format'
+import { formatPrecisePrice } from '../utils/format'
 
 interface BookSideTableProps {
   title: string
@@ -29,7 +29,7 @@ function BookSideTable({ title, levels }: BookSideTableProps) {
           <tbody>
             {levels.map((level) => (
               <tr key={level.price}>
-                <td>{formatPrice(level.price)}</td>
+                <td>{formatPrecisePrice(level.price)}</td>
                 <td>{level.size.toLocaleString()}</td>
                 <td>{level.orders}</td>
               </tr>
@@ -217,15 +217,15 @@ function OrderBookPanel({ marketId, sides, isSettled }: OrderBookPanelProps) {
           <dl className="market-metadata book-summary">
             <div>
               <dt>Best bid</dt>
-              <dd>{formatPrice(book.bestBid)}</dd>
+              <dd>{formatPrecisePrice(book.bestBid)}</dd>
             </div>
             <div>
               <dt>Best ask</dt>
-              <dd>{formatPrice(book.bestAsk)}</dd>
+              <dd>{formatPrecisePrice(book.bestAsk)}</dd>
             </div>
             <div>
               <dt>Spread</dt>
-              <dd>{formatPrice(book.spread)}</dd>
+              <dd>{formatPrecisePrice(book.spread)}</dd>
             </div>
           </dl>
 

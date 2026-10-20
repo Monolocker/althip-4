@@ -5,6 +5,20 @@ export interface OutcomeSide {
     price: number | null
 }
 
+// How much a market's displayed price can be trusted 
+// From a background book check minutes old: display only, never for 
+// order decisions
+export interface BookSummary {
+    quality: "tight" | "wide" | "unreliable"
+    // "sweep": measured from OB. "mark": inferred bc market
+    // has never traded and book check has happened yet
+    source: "sweep" | "mark"
+    bid: number | null
+    ask: number | null
+    spread: number | null
+    checkedAt: string | null
+}
+
 export interface OutcomeMarket {
     id: string
     name: string
@@ -23,6 +37,8 @@ export interface OutcomeMarket {
     // Contracts traded in the last 24h, each settles to $1, thus, 
     // this is also total USDC traded across both sides. Null when unknown 
     volume24h: number | null 
+    // Null when there is no evidence either way
+    book: BookSummary | null
 }
 
 export interface QuestionMembership {
