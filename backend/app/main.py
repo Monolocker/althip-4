@@ -14,6 +14,7 @@ from app.models.book import OrderBook
 from app.models.market import OutcomeMarket, OutcomeMarketDetail
 from app.services.hyperliquid import HyperliquidClient, HyperliquidError
 from app.services.normalize import (
+    MarketData,
     index_outcome_ctxs,
     index_templates,
     normalize_market_detail,
@@ -52,11 +53,8 @@ class Snapshot:
         ctxs: dict[str, dict[str, Any]],
         templates: dict[str, dict[str, Any]],
     ) -> None:
-        self.meta = meta
-        self.mids = mids
-        self.ctxs = ctxs
-        self.templates = templates
-        self.markets = normalize_markets(meta, mids, ctxs, templates)
+        self.data = MarketData(meta, mids, ctxs, templates)
+        self.markets = normalize_markets(self.data)
         self.raw_by_id = {
             str(raw.get("outcome")): raw for raw in meta.get("outcomes", [])
         }
@@ -170,9 +168,7 @@ async def market_detail(market_id: str) -> OutcomeMarketDetail:
     # 1. Live market: served from the snapshot.
     raw = snapshot.raw_by_id.get(market_id)
     if raw is not None:
-        return normalize_market_detail(
-            raw, snapshot.mids, snapshot.meta, snapshot.ctxs, snapshot.templates
-        )
+        return normalize_market_detail(raw, snapshot.data)
 
     # 2. Previously fetched settled market: served from the permanent cache.
     settled_cache: dict[str, OutcomeMarketDetail] = app.state.settled
@@ -198,7 +194,7 @@ async def market_detail(market_id: str) -> OutcomeMarketDetail:
             status_code=404, detail=f"Market {market_id} not found"
         )
 
-    detail = normalize_settled_detail(settled, snapshot.meta, snapshot.templates)
+    detail = normalize_settled_detail(settled, snapshot.data)
     settled_cache[market_id] = detail
     return detail
 

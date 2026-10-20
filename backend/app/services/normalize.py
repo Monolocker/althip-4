@@ -2,6 +2,7 @@
 
 import logging 
 import re
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -17,6 +18,22 @@ from app.models.book import BookLevel, OrderBook
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class MarketData:
+    """Everything fetched from Hyperliquid that normalization reads.
+
+    One object instead of four parameters threaded through every function
+    (Milestone 18.3a). Adding a new input means adding a field here, not
+    changing every signature between the snapshot and normalize_outcome.
+    frozen=True: a snapshot's data never changes after it is built.
+    """
+
+    meta: dict[str, Any]
+    mids: dict[str, str] = field(default_factory=dict)
+    ctxs: dict[str, dict[str, Any]] = field(default_factory=dict)
+    templates: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 def parse_spec(description: str) -> dict[str, str]:
     """"perp:BTC|threshold:100000|time:20261001-0000"
@@ -159,14 +176,14 @@ def render_template(text: str, values: dict[str, str]) -> str | None:
     if any(key not in values for key in keys):
         return None
 
-    def replace(match: re.Match[str]) -> str:
+    def substitute(match: re.Match[str]) -> str:
         # Some templates already write "{scheduledStart} UTC"; adding our
         # own suffix there would produce "... 17:00 UTC UTC".
         already_labeled = text.startswith(" UTC", match.end())
         key = match.group(1)
         return _format_value(key, values[key], add_utc=not already_labeled)
 
-    return PLACEHOLDER.sub(replace, text)
+    return PLACEHOLDER.sub(substitute, text)
 
 
 def _lookup_template(
@@ -317,19 +334,16 @@ def build_question(name: str, spec: dict[str, str], event_at: datetime | None) -
     
 def normalize_outcome(
     raw: dict[str, Any],
-    mids: dict[str, str],
+    data: MarketData,
     question: dict[str, Any] | None = None,
-    ctxs: dict[str, dict[str, Any]] | None = None,
-    templates: dict[str, dict[str, Any]] | None = None,
 ) -> OutcomeMarket:
-    """Convert one raw Hyperliquid outcome + mid prices into our model.
+    """Convert one raw Hyperliquid outcome into our model.
 
     `question` is the raw parent question this outcome belongs to, if
     any; it supplies times and title text the outcome itself lacks.
-    `ctxs` are outcome-coin trading contexts (see index_outcome_ctxs);
-    None or a missing coin simply leaves volume unknown.
-    `templates` (see index_templates) supply approved display wording;
-    without them, titles fall back to build_question or the raw spec.
+    From `data`: mids give prices, ctxs give volume (a missing coin
+    leaves it unknown), templates give approved display wording (without
+    them, titles fall back to build_question or the raw spec).
     """
     outcome_id = int(raw["outcome"])
     description = raw.get("description", "")
@@ -343,7 +357,7 @@ def normalize_outcome(
     event_at, resolves_by = resolve_times(values)
 
     name = raw.get("name", "")
-    templates = templates or {}
+    templates = data.templates
     title = (
         template_question(name, values, question, question_spec, templates)
         or build_question(name, spec, event_at)
@@ -355,7 +369,7 @@ def normalize_outcome(
     sides: list[OutcomeSide] = []
     for index, side_spec in enumerate(raw.get("sideSpecs", [])[:2]):
         coin = f"#{10 * outcome_id + index}"
-        raw_mid = mids.get(coin)
+        raw_mid = data.mids.get(coin)
         try:
             price = float(raw_mid) if raw_mid is not None else None
         except ValueError:
@@ -375,7 +389,7 @@ def normalize_outcome(
 
     # Both sides report the same dayBaseVlm (verified in __main__ below),
     # so side 0 alone gives the market's volume without double counting.
-    yes_ctx = (ctxs or {}).get(f"#{10 * outcome_id}")
+    yes_ctx = data.ctxs.get(f"#{10 * outcome_id}")
     volume_24h = _parse_volume(yes_ctx)
 
     return OutcomeMarket(
@@ -393,25 +407,18 @@ def normalize_outcome(
     )
 
 
-def normalize_markets(
-    meta: dict[str, Any],
-    mids: dict[str, str],
-    ctxs: dict[str, dict[str, Any]] | None = None,
-    templates: dict[str, dict[str, Any]] | None = None,
-) -> list[OutcomeMarket]:
+def normalize_markets(data: MarketData) -> list[OutcomeMarket]:
     """Normalize all outcomes, isolating failures per market.
 
     One malformed market is logged and skipped; it must never prevent
     the other 41 from being served.
     """
-    questions = questions_by_outcome(meta)
+    questions = questions_by_outcome(data.meta)
     markets: list[OutcomeMarket] = []
-    for raw in meta.get("outcomes", []):
+    for raw in data.meta.get("outcomes", []):
         try:
             question = questions.get(int(raw["outcome"]))
-            markets.append(
-                normalize_outcome(raw, mids, question, ctxs, templates)
-            )
+            markets.append(normalize_outcome(raw, data, question))
         except Exception:
             logger.exception(
                 "Skipping unnormalizable outcome: %r", raw.get("outcome")
@@ -462,12 +469,11 @@ def find_deployer(venue: str, meta: dict[str, Any]) -> str | None:
 
 def _build_detail(
     base: OutcomeMarket,
-    meta: dict[str, Any],
+    data: MarketData,
     settlement: Settlement | None = None,
-    templates: dict[str, dict[str, Any]] | None = None,
 ) -> OutcomeMarketDetail:
     """Assemble the detail model from a base market plus derived data."""
-    templates = templates or {}
+    meta, templates = data.meta, data.templates
     spec = parse_spec(base.description)
     question = questions_by_outcome(meta).get(int(base.id))
     question_spec = (
@@ -484,26 +490,15 @@ def _build_detail(
         rules=template_rules(base.name, values, templates),
     )
 
-
 def normalize_market_detail(
-    raw: dict[str, Any],
-    mids: dict[str, str],
-    meta: dict[str, Any],
-    ctxs: dict[str, dict[str, Any]] | None = None,
-    templates: dict[str, dict[str, Any]] | None = None,
+    raw: dict[str, Any], data: MarketData
 ) -> OutcomeMarketDetail:
     """Build the rich detail model for one live outcome."""
-    question = questions_by_outcome(meta).get(int(raw["outcome"]))
-    return _build_detail(
-        normalize_outcome(raw, mids, question, ctxs, templates), 
-        meta,
-        templates=templates,
-    )
+    question = questions_by_outcome(data.meta).get(int(raw["outcome"]))
+    return _build_detail(normalize_outcome(raw, data, question), data)
 
 def normalize_settled_detail(
-    settled: dict[str, Any],
-    meta: dict[str, Any],
-    templates: dict[str, dict[str, Any]] | None = None,
+    settled: dict[str, Any], data: MarketData
 ) -> OutcomeMarketDetail:
     """Build the detail model for the settled outcome
     
@@ -514,10 +509,11 @@ def normalize_settled_detail(
     # A settled outcome's question may itself be gone from outcomeMeta;
     # then question members simply have no times or parent title, which
     # is acceptable.
-    question = questions_by_outcome(meta).get(int(settled["spec"]["outcome"]))
-    base = normalize_outcome(
-        settled["spec"], mids={}, question=question, templates=templates
-    )
+    question = questions_by_outcome(data.meta).get(int(settled["spec"]["outcome"]))
+    # replace() copies the frozen dataclass with some fields swapped:
+    # settled markets have no live prices or trading context.
+    settled_data = replace(data, mids={}, ctxs={})
+    base = normalize_outcome(settled["spec"], settled_data, question)
     base = base.model_copy(update={"status": "settled"})
 
     try:
@@ -536,7 +532,7 @@ def normalize_settled_detail(
         details=str(settled.get("details", "")),
         winning_side_index=winner,
     )
-    return _build_detail(base, meta, settlement, templates)
+    return _build_detail(base, data, settlement)
 
 def _parse_levels(raw_levels: Any) -> list[BookLevel]:
     """Convert raw {"px", "sz", "n"} dicts into BookLevels, skipping bad ones"""
@@ -603,7 +599,7 @@ if __name__ == "__main__":
             ctxs = index_outcome_ctxs(await client.fetch_spot_asset_ctxs())
             templates = index_templates(await client.fetch_outcome_templates())
 
-        markets = normalize_markets(meta, mids, ctxs, templates)
+        markets = normalize_markets(MarketData(meta, mids, ctxs, templates))
         raw_count = len(meta.get("outcomes", []))
         print(f"normalized {len(markets)} of {raw_count} outcomes\n")
 
@@ -657,8 +653,6 @@ if __name__ == "__main__":
             print(f"  {m.volume_24h or 0:>12,.0f}  {m.id:>6}  {m.question[:60]}")
 
         # Milestone 18.1: which markets got template wording, and one
-        # sample title + side labels per raw name.
-                # Milestone 18.1: which markets got template wording, and one
         # sample title + side labels per raw name.
         questions = questions_by_outcome(meta)
         no_template: Counter[str] = Counter()
