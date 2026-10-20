@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.models.market import (
+    BookSummary,
     OutcomeMarket, 
     OutcomeMarketDetail,
     OutcomeSide,
@@ -18,6 +19,15 @@ from app.models.book import BookLevel, OrderBook
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class TopOfBook:
+    """Best bid and ask of one coin, as recorded by the book sweep"""
+
+    bid: float | None
+    ask: float | None
+    checked_at: float # time.time() when the book was fetched
 
 
 @dataclass(frozen=True)
@@ -34,6 +44,11 @@ class MarketData:
     mids: dict[str, str] = field(default_factory=dict)
     ctxs: dict[str, dict[str, Any]] = field(default_factory=dict)
     templates: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Side-0 top of book per coin, from the background sweep (18.3b)
+    tops: dict[str, TopOfBook] = field(default_factory=dict)
+    # When this data was assembled (time.time()). Book ages are measured
+    # against it, which keeps normalization a pure function of its input
+    as_of: float = 0.0
 
 def parse_spec(description: str) -> dict[str, str]:
     """"perp:BTC|threshold:100000|time:20261001-0000"
@@ -302,6 +317,61 @@ def _parse_volume(ctx: dict[str, Any] | None) -> float | None:
     except (KeyError, TypeError, ValueError):
         return None
 
+# ---------------------------------------------------------------
+# Book quality (Milestone 18.3b)
+# ---------------------------------------------------------------
+# Thresholds chosen in 18.3 from the full-book probe: 156 markets were
+# within 2c, 31 between 2c and 10c, 144 empty, one-sided or wider.
+TIGHT_MAX_SPREAD = 0.02
+WIDE_MAX_SPREAD = 0.10
+# Sweep data older than this is not trusted (the sweep may have stalled).
+# 2.5 sweep intervals of 180s: one missed sweep is tolerated, two are not.
+TOP_MAX_AGE_SECONDS = 450.0
+# Hyperliquid's mark for a coin that has never traded. Observed in 18.3:
+# 106 of 106 markets with this mark had an unusable book.
+PLACEHOLDER_MARK = "0.5"
+
+
+def classify_spread(
+    bid: float | None, ask: float | None
+) -> tuple[float | None, str]:
+    """(spread, quality) for a top of book.
+
+    The spread is rounded to 6 decimals before comparing: in floating
+    point 0.30 - 0.28 is 0.020000000000000018, which would wrongly fail
+    a "<= 0.02" check.
+    """
+    if bid is None or ask is None:
+        return None, "unreliable"
+    spread = round(ask - bid, 6)
+    if spread <= TIGHT_MAX_SPREAD:
+        return spread, "tight"
+    if spread <= WIDE_MAX_SPREAD:
+        return spread, "wide"
+    return spread, "unreliable"
+
+
+def book_summary(coin: str, data: MarketData) -> BookSummary | None:
+    """Book quality for one coin: fresh sweep data first, cheap signal second."""
+    top = data.tops.get(coin)
+    if top is not None and data.as_of - top.checked_at <= TOP_MAX_AGE_SECONDS:
+        spread, quality = classify_spread(top.bid, top.ask)
+        return BookSummary(
+            quality=quality,
+            source="sweep",
+            bid=top.bid,
+            ask=top.ask,
+            spread=spread,
+            checked_at=datetime.fromtimestamp(top.checked_at, tz=timezone.utc),
+        )
+
+    # Fallback: the placeholder mark can only ever say "unreliable". It
+    # never claims a market is tight, so it never greys out a real price.
+    ctx = data.ctxs.get(coin)
+    if ctx is not None and ctx.get("markPx") == PLACEHOLDER_MARK:
+        return BookSummary(quality="unreliable", source="mark")
+    return None
+
 
 def clean_label(label: str) -> str:
     """'template:Yes' -> 'Yes'"""
@@ -386,11 +456,8 @@ def normalize_outcome(
                 price=price,
             )
         )
-
-    # Both sides report the same dayBaseVlm (verified in __main__ below),
-    # so side 0 alone gives the market's volume without double counting.
-    yes_ctx = data.ctxs.get(f"#{10 * outcome_id}")
-    volume_24h = _parse_volume(yes_ctx)
+    yes_coin = f"#{10 * outcome_id}"
+    volume_24h = _parse_volume(data.ctxs.get(yes_coin))
 
     return OutcomeMarket(
         id=str(outcome_id),
@@ -404,6 +471,7 @@ def normalize_outcome(
         venue=raw.get("venue", ""),
         sides=sides,
         volume_24h=volume_24h,
+        book=book_summary(yes_coin, data)
     )
 
 
@@ -512,7 +580,7 @@ def normalize_settled_detail(
     question = questions_by_outcome(data.meta).get(int(settled["spec"]["outcome"]))
     # replace() copies the frozen dataclass with some fields swapped:
     # settled markets have no live prices or trading context.
-    settled_data = replace(data, mids={}, ctxs={})
+    settled_data = replace(data, mids={}, ctxs={}, tops={})
     base = normalize_outcome(settled["spec"], settled_data, question)
     base = base.model_copy(update={"status": "settled"})
 

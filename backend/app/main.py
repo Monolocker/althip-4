@@ -1,20 +1,25 @@
 """FastAPI application serving normalized Hyperliquid outcome markets."""
 
+import asyncio
+import contextlib
 import logging
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Any, AsyncIterator
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.book import OrderBook
 from app.models.market import OutcomeMarket, OutcomeMarketDetail
+from app.services.sweep import BookSweeper
 from app.services.hyperliquid import HyperliquidClient, HyperliquidError
 from app.services.normalize import (
     MarketData,
+    TopOfBook,
     index_outcome_ctxs,
     index_templates,
     normalize_market_detail,
@@ -52,8 +57,18 @@ class Snapshot:
         mids: dict[str, str],
         ctxs: dict[str, dict[str, Any]],
         templates: dict[str, dict[str, Any]],
+        tops: dict[str, TopOfBook],
     ) -> None:
-        self.data = MarketData(meta, mids, ctxs, templates)
+        self.data = MarketData(
+            meta,
+            mids,
+            ctxs,
+            templates,
+            # Copied: the sweep keeps updating its dict, but a snapshot
+            # must stay one consistent view.
+            tops=dict(tops),
+            as_of=time.time(),
+        )
         self.markets = normalize_markets(self.data)
         self.raw_by_id = {
             str(raw.get("outcome")): raw for raw in meta.get("outcomes", [])
@@ -76,7 +91,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.settled = {}
     # coin -> (fetched_at_monotonic, OrderBook)
     app.state.books = {}    
+
+    # Background book sweep (Milestone 18.3b). create_task starts it
+    # running alongside request handling; it never blocks startup.
+    app.state.sweeper = BookSweeper(app.state.hyperliquid, side0_coins)
+    sweep_task = asyncio.create_task(app.state.sweeper.run_forever())
+
     yield
+
+    # Shutdown order matters: stop the sweep BEFORE closing the HTTP
+    # client it uses, then wait for the cancellation to finish.
+    sweep_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await sweep_task
     await app.state.http.aclose()
 
 
@@ -114,6 +141,19 @@ async def get_templates() -> dict[str, dict[str, Any]]:
     return templates
 
 
+async def side0_coins() -> list[str]:
+    """Coins for the book sweep: side 0 of every live market.
+
+    HL merges each market's two books into one. Per HIP-4 docs,
+    buying Yes at p is equivalent to selling No at 1-p. Thus, side 0's
+    book describes both sides. Observed in m18.3b: liquid markets mirror
+    exactly; fast near-expiry books can differ between two separate 
+    requests only because the book moved in between.
+    """
+    snapshot = await get_snapshot()
+    return [m.sides[0].coin for m in snapshot.markets if m.sides]
+
+
 async def get_snapshot() -> Snapshot:
     """Return a fresh snapshot, refetching when the cache has expired."""
     current: Snapshot | None = app.state.snapshot
@@ -141,18 +181,47 @@ async def get_snapshot() -> Snapshot:
 
     templates = await get_templates()
 
-    fresh = Snapshot(meta, mids, ctxs, templates)
+    sweeper: BookSweeper = app.state.sweeper
+    fresh = Snapshot(meta, mids, ctxs, templates, sweeper.tops)
     app.state.snapshot = fresh
     return fresh
 
 
+class SweepStatus(BaseModel):
+    """Whether the background book sweep is alive and how complete it is."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    coins_tracked: int = Field(alias="coinsTracked")
+    last_completed_at: datetime | None = Field(alias="lastCompletedAt")
+    last_failures: int = Field(alias="lastFailures")
+
+
 class HealthResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     status: str
+    book_sweep: SweepStatus = Field(alias="bookSweep")
 
 
-@app.get("/health")
+@app.get("/health", response_model_by_alias=True)
 async def health() -> HealthResponse:
-    return HealthResponse(status="ok")
+    # A background task can die silently; exposing its progress here turns
+    # "is it still running?" into something you can check with curl.
+    sweeper: BookSweeper = app.state.sweeper
+    completed = sweeper.last_completed_at
+    return HealthResponse(
+        status="ok",
+        book_sweep=SweepStatus(
+            coins_tracked=len(sweeper.tops),
+            last_completed_at=(
+                datetime.fromtimestamp(completed, tz=timezone.utc)
+                if completed is not None
+                else None
+            ),
+            last_failures=sweeper.last_failures,
+        ),
+    )
 
 
 @app.get("/markets")

@@ -20,6 +20,26 @@ class OutcomeSide(BaseModel):
     coin: str  # Hyperliquid coin string, e.g. "#12100"; needed for books later
     price: float | None = None  # market-implied probability; None if unknown
 
+class BookSummary(BaseModel):
+    """How much a market's displayed price can be trusted (Milestone 18.3b).
+
+    Built from the background book sweep, which is minutes old by design:
+    it answers "is there a real market here?" for display only and must
+    never feed an order decision.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    # tight: spread <= 2c. wide: <= 10c. unreliable: > 10c, empty, one-sided,
+    # or a never-traded market (placeholder mark of 0.5).
+    quality: Literal["tight", "wide", "unreliable"]
+    # "sweep": measured from the order book. "mark": inferred from the
+    # placeholder mark because no fresh sweep data exists yet.
+    source: Literal["sweep", "mark"]
+    bid: float | None = None
+    ask: float | None = None
+    spread: float | None = None
+    checked_at: datetime | None = Field(default=None, alias="checkedAt")
 
 class OutcomeMarket(BaseModel):
     """A single outcome market, normalized for our application."""
@@ -44,6 +64,8 @@ class OutcomeMarket(BaseModel):
     # traded across both sides of the outcome market. None when HL
     # reported no trading context
     volume_24h: float | None = Field(default=None, alias="volume24h")
+    # Side-0 book quality; None when there is no evidence either way
+    book: BookSummary | None = None
 
 
 class QuestionMembership(BaseModel):
