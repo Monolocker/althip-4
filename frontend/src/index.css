@@ -609,3 +609,30 @@ button {
   color: #777;
   font-size: 0.8rem;
 }
+
+
+/* Milestone 18.3c: book quality */
+
+.market-card-outcomes--unreliable strong,
+.detail-outcomes--unreliable strong {
+  color: #aaa;
+}
+
+.market-card-outcomes--unreliable,
+.detail-outcomes--unreliable {
+  opacity: 0.65;
+}
+
+.book-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+}
+
+.book-note--wide {
+  color: #8a6d00;
+}
+
+.book-note--unreliable {
+  color: #a33;
+  font-weight: 600;
+}
