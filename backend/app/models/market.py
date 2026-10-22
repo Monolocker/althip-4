@@ -41,6 +41,24 @@ class BookSummary(BaseModel):
     spread: float | None = None
     checked_at: datetime | None = Field(default=None, alias="checkedAt")
 
+class QuestionRef(BaseModel):
+    """Compact link from an outcome to its multi-outcome question (18.6a).
+
+    Carried on every list item so the frontend can group a question's
+    outcomes into one card without a second request.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str  # Hyperliquid question id, e.g. "419"
+    # Rendered question title, e.g. "UEFA Europa League Matchday 3:
+    # Juventus v Stade Rennais FC". None without a template.
+    title: str | None = None
+    role: Literal["named", "fallback"]
+    # This outcome's own name within the question: "Juventus", "Draw",
+    # "Fallback". The full title of the market stays in `question`.
+    outcome_label: str = Field(alias="outcomeLabel")
+
 class OutcomeMarket(BaseModel):
     """A single outcome market, normalized for our application."""
 
@@ -70,6 +88,8 @@ class OutcomeMarket(BaseModel):
     # is a market-implied probablility. "scalar" = sides pay out 
     # proportionally (long/short on a price range). Prices != prob
     payout: Literal["binary", "scalar"] = "binary"
+    # Set when this market belongs to a multi-outcome question
+    parent: QuestionRef | None = None
 
 
 class QuestionMembership(BaseModel):

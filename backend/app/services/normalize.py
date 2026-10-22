@@ -12,6 +12,7 @@ from app.models.market import (
     OutcomeMarketDetail,
     OutcomeSide,
     QuestionMembership,
+    QuestionRef,
     Settlement,
 )
 
@@ -264,6 +265,40 @@ def template_question(
         return f"{own} — {parent}" if parent is not None else own
     return own
 
+def question_ref(
+    outcome_id: int,
+    raw: dict[str, Any],
+    values: dict[str, str],
+    question: dict[str, Any] | None,
+    question_spec: dict[str, str],
+    templates: dict[str, dict[str, Any]],
+) -> QuestionRef | None:
+    """How this outcome sits inside its question, or None if standalone."""
+    if question is None:
+        return None
+
+    fallback = question.get("fallbackOutcome")
+    is_fallback = fallback is not None and str(fallback) == str(outcome_id)
+
+    if is_fallback:
+        label = "Fallback"
+    else:
+        template = _lookup_template(raw.get("name", ""), templates)
+        own = (
+            render_template(template.get("name", ""), values)
+            if template is not None
+            else None
+        )
+        # Non-template members (Hyperliquid's "Recurring Named Outcome")
+        # keep their raw text: honest, if not pretty.
+        label = own or raw.get("description", "") or raw.get("name", "")
+
+    return QuestionRef(
+        id=str(question.get("question")),
+        title=_question_title(question, question_spec, templates),
+        role="fallback" if is_fallback else "named",
+        outcome_label=label,
+    )
 
 def template_rules(
     name: str, values: dict[str, str], templates: dict[str, dict[str, Any]]
@@ -484,6 +519,9 @@ def normalize_outcome(
         volume_24h=volume_24h,
         book=book_summary(yes_coin, data),
         payout=payout_kind(name),
+        parent=question_ref(
+            outcome_id, raw, values, question, question_spec, templates
+        ),
     )
 
 
