@@ -1,4 +1,5 @@
 import type { OutcomeMarket } from '../../types/market'
+import { isPriceUnreliable } from './pricing'
 
 // Discovery logic: pure functions that take markets in and return
 // markets out. No React, no fetching, no state. Every discovery
@@ -238,17 +239,6 @@ function compareTimes(a: string | null, b: string | null): number {
   return 0
 }
 
-// Recommended: markets with a parsed, human-readable question first,
-// then soonest discovery time. (Unchanged triage order from 17.2.)
-function compareDefault(a: OutcomeMarket, b: OutcomeMarket): number {
-  const aParsed = a.question !== a.description
-  const bParsed = b.question !== b.description
-  if (aParsed !== bParsed) {
-    return aParsed ? -1 : 1
-  }
-  return compareTimes(discoveryTime(a), discoveryTime(b))
-}
-
 // Tiers for "happening soonest": upcoming events, then events that
 // already happened but have not settled, then undated markets.
 function soonestTier(market: OutcomeMarket, now: number): number {
@@ -273,6 +263,29 @@ function compareSoonest(
 
   const timeOrder = compareTimes(discoveryTime(a), discoveryTime(b))
   return soonestTier(a, now) === 1 ? -timeOrder : timeOrder
+}
+
+// Recommended (Milestone 18.5): markets with a usable price first, then
+// markets whose price means nothing (empty / very wide / never traded).
+// Within each group, the "Happening soonest" order: upcoming events
+// nearest first, then events awaiting their result, then undated ones.
+//
+// This replaces the 17.2 rule "readable question first", which was a
+// workaround for raw spec titles. Since 18.1 rendered titles from
+// Hyperliquid's templates, almost every title is readable, so that rule
+// no longer separated anything useful. Unreliable markets are demoted,
+// not hidden: search and filters still find them.
+function compareRecommended(
+  a: OutcomeMarket,
+  b: OutcomeMarket,
+  now: number,
+): number {
+  const aRank = isPriceUnreliable(a) ? 1 : 0
+  const bRank = isPriceUnreliable(b) ? 1 : 0
+  if (aRank !== bRank) {
+    return aRank - bRank
+  }
+  return compareSoonest(a, b, now)
 }
 
 // Newest: highest outcome id first. ASSUMPTION: Hyperliquid assigns
@@ -307,7 +320,7 @@ export function sortMarkets(
 
   switch (mode) {
     case 'default':
-        return sorted.sort(compareDefault)
+        return sorted.sort((a, b) => compareRecommended(a, b, now))
     case 'trending':
         return sorted.sort(compareTrending)
     case 'soonest':

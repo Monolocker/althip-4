@@ -5,7 +5,7 @@ import type {
 import { venueLabel } from '../features/markets/discovery'
 import { formatPrice, formatTime, formatVolume } from '../utils/format'
 import BookQualityNote from './BookQualityNote'
-import { formatProbability, impliedProbability } from '../features/markets/pricing'
+import { formatProbability, impliedProbability, isPriceUnreliable } from '../features/markets/pricing'
 import OrderBookPanel from './OrderBookPanel'
 import TimeValue from './TimeValue'
 
@@ -135,7 +135,7 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
 
         <div
           className={
-            market.book?.quality === 'unreliable'
+            isPriceUnreliable(market)
               ? 'detail-outcomes detail-outcomes--unreliable'
               : 'detail-outcomes'
           }

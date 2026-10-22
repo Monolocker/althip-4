@@ -16,9 +16,17 @@ export function impliedProbability(
   side: OutcomeSide,
 ): number | null {
   if (market.payout !== 'binary') return null
-  if (market.book?.quality === 'unreliable') return null
+  if (isPriceUnreliable(market)) return null
   return side.price
 }
+
+// One definition of "this market's price means nothing", shared by 
+// market cards, detail panel, implied prob, and sorting. No book data
+// (null) is NOT unreliable: w/o evidence, price is never greyed
+export function isPriceUnreliable(market: OutcomeMarket): boolean {
+    return market.book?.quality === 'unreliable'
+}
+
 
 export function formatProbability(probability: number): string {
   return `${(probability * 100).toFixed(1)}%`

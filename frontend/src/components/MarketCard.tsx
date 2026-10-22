@@ -1,6 +1,7 @@
 import type { OutcomeMarket } from '../types/market'
 import { formatPrice, formatVolume } from '../utils/format'
 import BookQualityNote from './BookQualityNote'
+import { isPriceUnreliable } from '../features/markets/pricing'
 
 interface MarketCardProps {
   market: OutcomeMarket
@@ -15,7 +16,7 @@ function MarketCard({
 }: MarketCardProps) {
   // Milestone 18.3: an unreliable book makes both sides' prices
   // meaningless (the two sides share one merged book).
-  const unreliable = market.book?.quality === 'unreliable'
+  const unreliable = isPriceUnreliable(market)
 
   return (
     <article
