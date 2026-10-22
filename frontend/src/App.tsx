@@ -13,10 +13,11 @@ import {
   filterByVenue,
   listVenues,
   searchMarkets,
-  sortMarkets,
+  sortEntries,
   type CloseFilter,
   type SortMode,
 } from "./features/markets/discovery"
+import { groupEntries } from "./features/markets/grouping"
 import { useNow } from "./hooks/useNow"
 
 // Bucket boundaries are hours and days apart; re-evaluating them once
@@ -52,8 +53,11 @@ function App() {
   // Chip order comes from the full list so it doesn't jump around.
   const venues = listVenues(markets)
 
-  const visibleMarkets = sortMarkets(
-    filterByCloseBucket(byVenue, closeFilter, now),
+  // Filters work on outcomes; then outcomes of the same question are
+  // grouped into one card, and the cards are sorted (Milestone 18.6b).
+  const visibleMarkets = filterByCloseBucket(byVenue, closeFilter, now)
+  const entries = sortEntries(
+    groupEntries(visibleMarkets, markets),
     sortMode,
     now,
   )
@@ -137,7 +141,7 @@ function App() {
                 <MarketSort value={sortMode} onChange={setSortMode} />
               </div>
               <MarketList
-                markets={visibleMarkets}
+                entries={entries}
                 selectedMarketId={selectedMarketId}
                 onSelect={handleSelectMarket}
               />

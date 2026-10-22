@@ -19,6 +19,16 @@ export interface BookSummary {
     checkedAt: string | null
 }
 
+// Compact link from an outcome to its multi-outcome question (18.6a).
+export interface QuestionRef {
+    id: string
+    // Rendered question title; null without a template.
+    title: string | null
+    role: "named" | "fallback"
+    // This outcome's own name within the question: "Juventus", "Draw".
+    outcomeLabel: string
+}
+
 export interface OutcomeMarket {
     id: string
     name: string
@@ -42,6 +52,8 @@ export interface OutcomeMarket {
     // "binary": a side's price is a market-implied probability
     // "scalar": proportional payout; prices are not probabilities
     payout: "binary" | "scalar"
+    // Set when this outcome belong to a multi-outcome question
+    parent: QuestionRef | null
 }
 
 export interface QuestionMembership {

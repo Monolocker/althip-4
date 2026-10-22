@@ -1,14 +1,15 @@
-import type { OutcomeMarket } from '../types/market'
+import type { ListEntry } from '../features/markets/grouping'
 import MarketCard from './MarketCard'
+import QuestionCard from './QuestionCard'
 
 interface MarketListProps {
-  markets: OutcomeMarket[]
+  entries: ListEntry[]
   selectedMarketId: string | null
   onSelect: (marketId: string) => void
 }
 
 function MarketList({
-  markets,
+  entries,
   selectedMarketId,
   onSelect,
 }: MarketListProps) {
@@ -19,21 +20,33 @@ function MarketList({
     >
       <div className="market-list-header">
         <h2>Markets</h2>
-        <span>{markets.length}</span>
+        {/* Counts cards (decision 3), not outcomes. */}
+        <span>{entries.length}</span>
       </div>
 
       <div className="market-list-items">
-        {markets.length === 0 ? (
+        {entries.length === 0 ? (
           <p className="market-list-empty">No markets to show.</p>
         ) : (
-          markets.map((market) => (
-            <MarketCard
-              key={market.id}
-              market={market}
-              isSelected={market.id === selectedMarketId}
-              onSelect={onSelect}
-            />
-          ))
+          entries.map((entry) =>
+            // Narrowing on the discriminant: inside each branch
+            // TypeScript knows exactly which entry shape it has.
+            entry.kind === 'market' ? (
+              <MarketCard
+                key={entry.key}
+                market={entry.market}
+                isSelected={entry.market.id === selectedMarketId}
+                onSelect={onSelect}
+              />
+            ) : (
+              <QuestionCard
+                key={entry.key}
+                entry={entry}
+                selectedMarketId={selectedMarketId}
+                onSelect={onSelect}
+              />
+            ),
+          )
         )}
       </div>
     </section>

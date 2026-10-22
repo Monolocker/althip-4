@@ -1,4 +1,5 @@
 import type { OutcomeMarket } from '../../types/market'
+import { entryMembers, type ListEntry } from './grouping'
 import { isPriceUnreliable } from './pricing'
 
 // Discovery logic: pure functions that take markets in and return
@@ -6,7 +7,8 @@ import { isPriceUnreliable } from './pricing'
 // feature in Milestone 17 (search, time buckets, sort modes) lands
 // here as another small function the UI composes.
 //
-// Pipeline (see App.tsx): search -> deployer + time filters -> sort
+// Pipeline (see App.tsx): search -> deployer + time filters (on
+// outcomes) -> group into list entries (grouping.ts) -> sort entries
 
 // ---------------------------------------------------------------
 // Discovery time
@@ -110,10 +112,11 @@ export function getCloseBucket(
   market: OutcomeMarket,
   now: number,
 ): CloseBucket {
-  const time = discoveryTime(market)
-  if (time === null) {
-    return 'undated'
+  return bucketOfTime(discoveryTime(market), now)
   }
+
+function bucketOfTime(time: string | null, now: number): CloseBucket {
+  if (time === null) {
 
   const timeMs = Date.parse(time)
   if (Number.isNaN(timeMs)) {
@@ -125,6 +128,7 @@ export function getCloseBucket(
   if (remainingMs < DAY_MS) return 'under-24h'
   if (remainingMs <= 7 * DAY_MS) return '1-7d'
   return 'over-7d'
+}
 }
 
 export function filterByCloseBucket(
@@ -231,7 +235,52 @@ export function isSortMode(value: string): value is SortMode {
   return (SORT_MODES as readonly string[]).includes(value)
 }
 
-// Earliest first; markets without a time go last.
+// Sorting works on list ENTRIES (Milestone 18.6b): a standalone market
+// or a whole question. Each entry is reduced once to the few facts the
+// comparators need, then sorted by those facts.
+interface SortKeys {
+  time: string | null
+  volume: number | null
+  unreliable: boolean
+  newestId: number
+}
+
+// Decisions from 18.6b: a question sorts by its shared event time, by the
+// SUM of its named outcomes' volumes, is unreliable only when ALL named
+// outcomes are, and is as new as its newest outcome.
+function sortKeys(entry: ListEntry): SortKeys {
+  if (entry.kind === 'market') {
+    const market = entry.market
+    return {
+      time: discoveryTime(market),
+      volume: market.volume24h,
+      unreliable: isPriceUnreliable(market),
+      newestId: Number(market.id),
+    }
+  }
+
+  const members = entryMembers(entry)
+  // If a search matched only the fallback, judge by what is visible.
+  const named = entry.named.length > 0 ? entry.named : members
+  // A type predicate inside filter: TypeScript then knows `volumes`
+  // is number[], not (number | null)[].
+  const volumes = named
+    .map((market) => market.volume24h)
+    .filter((volume): volume is number => volume !== null)
+
+  return {
+    // A question's outcomes share one event time, so any member gives it.
+    time: discoveryTime(members[0]),
+    volume:
+      volumes.length > 0
+        ? volumes.reduce((total, volume) => total + volume, 0)
+        : null,
+    unreliable: named.every(isPriceUnreliable),
+    newestId: Math.max(...members.map((market) => Number(market.id))),
+  }
+}
+
+// Earliest first; entries without a time go last.
 function compareTimes(a: string | null, b: string | null): number {
   if (a !== null && b !== null) return a.localeCompare(b)
   if (a !== null) return -1
@@ -240,92 +289,87 @@ function compareTimes(a: string | null, b: string | null): number {
 }
 
 // Tiers for "happening soonest": upcoming events, then events that
-// already happened but have not settled, then undated markets.
-function soonestTier(market: OutcomeMarket, now: number): number {
-  const bucket = getCloseBucket(market, now)
+// already happened but have not settled, then undated entries.
+function soonestTier(keys: SortKeys, now: number): number {
+  const bucket = bucketOfTime(keys.time, now)
   if (bucket === 'awaiting') return 1
   if (bucket === 'undated') return 2
   return 0
 }
 
-// Happening soonest: ignores question quality entirely. Within the
-// upcoming tier the nearest event comes first; within the awaiting
-// tier the most recently passed event comes first.
-function compareSoonest(
-  a: OutcomeMarket,
-  b: OutcomeMarket,
-  now: number,
-): number {
+// Happening soonest: ignores price quality entirely. Within the upcoming
+// tier the nearest event comes first; within the awaiting tier the most
+// recently passed event comes first.
+function compareSoonest(a: SortKeys, b: SortKeys, now: number): number {
   const tierDiff = soonestTier(a, now) - soonestTier(b, now)
   if (tierDiff !== 0) {
     return tierDiff
   }
-
-  const timeOrder = compareTimes(discoveryTime(a), discoveryTime(b))
+  const timeOrder = compareTimes(a.time, b.time)
   return soonestTier(a, now) === 1 ? -timeOrder : timeOrder
 }
 
-// Recommended (Milestone 18.5): markets with a usable price first, then
-// markets whose price means nothing (empty / very wide / never traded).
-// Within each group, the "Happening soonest" order: upcoming events
-// nearest first, then events awaiting their result, then undated ones.
-//
-// This replaces the 17.2 rule "readable question first", which was a
-// workaround for raw spec titles. Since 18.1 rendered titles from
-// Hyperliquid's templates, almost every title is readable, so that rule
-// no longer separated anything useful. Unreliable markets are demoted,
-// not hidden: search and filters still find them.
-function compareRecommended(
-  a: OutcomeMarket,
-  b: OutcomeMarket,
-  now: number,
-): number {
-  const aRank = isPriceUnreliable(a) ? 1 : 0
-  const bRank = isPriceUnreliable(b) ? 1 : 0
+// Recommended (Milestone 18.5): entries with a usable price first, then
+// entries whose price means nothing (empty / very wide / never traded),
+// each group in "Happening soonest" order. Unreliable entries are
+// demoted, not hidden: search and filters still find them. (Replaces the
+// 17.2 "readable question first" rule, obsolete since 18.1's templates.)
+function compareRecommended(a: SortKeys, b: SortKeys, now: number): number {
+  const aRank = a.unreliable ? 1 : 0
+  const bRank = b.unreliable ? 1 : 0
   if (aRank !== bRank) {
     return aRank - bRank
   }
   return compareSoonest(a, b, now)
 }
 
+// Trending (Milestone 17.5): highest 24h volume first. Unknown volume
+// (null) sorts after every known volume, including 0: "no trades" is
+// information, "no data" is not.
+function compareTrending(a: SortKeys, b: SortKeys): number {
+  if (a.volume !== null && b.volume !== null) {
+    return b.volume - a.volume
+  }
+  if (a.volume !== null) return -1
+  if (b.volume !== null) return 1
+  return 0
+}
+
 // Newest: highest outcome id first. ASSUMPTION: Hyperliquid assigns
 // outcome ids in increasing order as markets are created. Observed in
 // live data (e.g. later recurring BTC markets have higher ids), but
 // not stated in the official docs.
-function compareNewest(a: OutcomeMarket, b: OutcomeMarket): number {
-  return Number(b.id) - Number(a.id)
+function compareNewest(a: SortKeys, b: SortKeys): number {
+  return b.newestId - a.newestId
 }
 
-// Trending (decision from Milestone 17.5): highest 24h volume first.
-// Unknown volume (null) sorts after every known volume, including 0:
-// "no trades" is information, "no data" is not.
-function compareTrending(a: OutcomeMarket, b: OutcomeMarket): number {
-    if (a.volume24h !== null && b.volume24h !== null) {
-      return b.volume24h - a.volume24h
-    }
-    if (a.volume24h !== null) return -1
-    if (b.volume24h !== null) return 1
-    return 0
-  }
-
-
-export function sortMarkets(
-  markets: OutcomeMarket[],
+function comparatorFor(
   mode: SortMode,
   now: number,
-): OutcomeMarket[] {
-  // Copy first: Array.prototype.sort mutates in place, and `markets`
-  // may be TanStack Query's cached array, which must never be mutated.
-  const sorted = [...markets]
-
+): (a: SortKeys, b: SortKeys) => number {
   switch (mode) {
     case 'default':
-        return sorted.sort((a, b) => compareRecommended(a, b, now))
+      return (a, b) => compareRecommended(a, b, now)
     case 'trending':
-        return sorted.sort(compareTrending)
+      return compareTrending
     case 'soonest':
-        return sorted.sort((a, b) => compareSoonest(a, b, now))
+      return (a, b) => compareSoonest(a, b, now)
     case 'newest':
-        return sorted.sort(compareNewest)
+      return compareNewest
   }
+}
+
+export function sortEntries(
+  entries: ListEntry[],
+  mode: SortMode,
+  now: number,
+): ListEntry[] {
+  // "Decorate, sort, undecorate": compute each entry's keys ONCE, sort
+  // the pairs, then unwrap. Computing keys inside the comparator would
+  // recompute them on every one of the ~n log n comparisons.
+  const compare = comparatorFor(mode, now)
+  return entries
+    .map((entry) => ({ entry, keys: sortKeys(entry) }))
+    .sort((x, y) => compare(x.keys, y.keys))
+    .map(({ entry }) => entry)
 }

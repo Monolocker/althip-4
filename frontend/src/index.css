@@ -651,3 +651,94 @@ button {
   color: #777;
   font-size: 0.8rem;
 }
+
+
+/* Milestone 18.6b: multi-outcome question cards */
+
+.question-card {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+}
+
+.question-card--selected {
+  border: 2px solid #333;
+  background: #fafafa;
+}
+
+.question-card-header h3 {
+  margin: 0.5rem 0 0.25rem;
+  font-size: 1rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.question-card-meta,
+.question-card-match,
+.question-card-sum {
+  margin: 0 0 0.5rem;
+  color: #666;
+  font-size: 0.8rem;
+}
+
+.question-card-match {
+  color: #8a6d00;
+}
+
+.question-card-rows {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.5rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.question-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: #f4f4f4;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.question-row:hover {
+  background: #eaeaea;
+}
+
+.question-row--selected {
+  border-color: #333;
+}
+
+.question-row-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.question-row--unreliable strong {
+  color: #aaa;
+}
+
+.question-card-fallback {
+  display: block;
+  margin: 0.25rem 0 0.5rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #888;
+  font: inherit;
+  font-size: 0.8rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.question-card-fallback--selected {
+  color: #222;
+  font-weight: 600;
+}
