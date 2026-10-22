@@ -5,8 +5,43 @@ import type {
 import { venueLabel } from '../features/markets/discovery'
 import { formatPrice, formatTime, formatVolume } from '../utils/format'
 import BookQualityNote from './BookQualityNote'
+import { formatProbability, impliedProbability } from '../features/markets/pricing'
 import OrderBookPanel from './OrderBookPanel'
 import TimeValue from './TimeValue'
+
+
+// One line under the outcome cards: what the prices mean, or why they
+// don't mean a probability. Unreliable books are already explained by
+// BookQualityNote, so they get no extra line here.
+function ImpliedProbabilityNote({ market }: { market: OutcomeMarket }) {
+  if (market.payout === 'scalar') {
+    return (
+      <p className="detail-note">
+        Scalar payout: sides pay out proportionally, so these prices are
+        not probabilities.
+      </p>
+    )
+  }
+
+  const parts = market.sides.flatMap((side) => {
+    const probability = impliedProbability(market, side)
+    return probability === null
+      ? []
+      : [`${side.label} ${formatProbability(probability)}`]
+  })
+  if (parts.length === 0) {
+    return null
+  }
+
+  return (
+    <p className="implied-probability">
+      Market-implied probability: {parts.join(' · ')}
+      <span className="implied-probability-caveat">
+        What traders are currently paying, not a forecast.
+      </span>
+    </p>
+  )
+}
 
 interface MarketDetailProps {
   market: OutcomeMarket
@@ -117,6 +152,8 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
           ))}
         </div>
         <BookQualityNote book={market.book} />
+
+        <ImpliedProbabilityNote market={market} />
 
         {market.book !== null && (
           <p className="detail-note">

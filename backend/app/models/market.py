@@ -66,6 +66,10 @@ class OutcomeMarket(BaseModel):
     volume_24h: float | None = Field(default=None, alias="volume24h")
     # Side-0 book quality; None when there is no evidence either way
     book: BookSummary | None = None
+    # "binary" = each sides settles to $1 or $0. Thus, a side's price
+    # is a market-implied probablility. "scalar" = sides pay out 
+    # proportionally (long/short on a price range). Prices != prob
+    payout: Literal["binary", "scalar"] = "binary"
 
 
 class QuestionMembership(BaseModel):

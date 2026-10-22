@@ -39,6 +39,9 @@ export interface OutcomeMarket {
     volume24h: number | null 
     // Null when there is no evidence either way
     book: BookSummary | null
+    // "binary": a side's price is a market-implied probability
+    // "scalar": proportional payout; prices are not probabilities
+    payout: "binary" | "scalar"
 }
 
 export interface QuestionMembership {

@@ -636,3 +636,18 @@ button {
   color: #a33;
   font-weight: 600;
 }
+
+
+/* Milestone 18.4: market-implied probability */
+
+.implied-probability {
+  margin: 0.75rem 0 0;
+  font-size: 0.95rem;
+}
+
+.implied-probability-caveat {
+  display: block;
+  margin-top: 0.15rem;
+  color: #777;
+  font-size: 0.8rem;
+}

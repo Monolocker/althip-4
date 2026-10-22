@@ -171,6 +171,17 @@ def template_id(name: str) -> str | None:
     prefix = "template:"
     return name[len(prefix):] if name.startswith(prefix) else None
 
+# Templates whose sides pay out proportionally instead of $1 or $0. From
+# the 28 live templates (18.1): scalarPrice ("Long tokens pay out $1 times
+# (price - {low}) / ({high} - {low})") and sportsScalarMarket. Every other
+# template, the protocol fallback, and Hyperliquid's own Recurring markets
+# are binary.
+SCALAR_TEMPLATE_IDS = frozenset({"scalarPrice", "sportsScalarMarket"})
+
+def payout_kind(name: str) -> str:
+    """'scalar' for proportional-payout templates, otherwise 'binary'."""
+    return "scalar" if template_id(name) in SCALAR_TEMPLATE_IDS else "binary"
+
 
 def _format_value(key: str, value: str, add_utc: bool) -> str:
     if key in TIMESTAMP_KEYS:
@@ -471,7 +482,8 @@ def normalize_outcome(
         venue=raw.get("venue", ""),
         sides=sides,
         volume_24h=volume_24h,
-        book=book_summary(yes_coin, data)
+        book=book_summary(yes_coin, data),
+        payout=payout_kind(name),
     )
 
 
@@ -750,6 +762,7 @@ if __name__ == "__main__":
         print(f"markets without own resolution rules: {sum(no_rules.values())}")
         for name, count in no_rules.most_common():
             print(f"  {count:4d}  {name}")
+        print(f"payout kinds: {dict(Counter(m.payout for m in markets))}")
         print("one sample per market kind (title | side labels):")
         for name, m in samples.items():
             labels = " / ".join(side.label for side in m.sides)
