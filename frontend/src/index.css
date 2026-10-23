@@ -742,3 +742,24 @@ button {
   color: #222;
   font-weight: 600;
 }
+
+
+/* Milestone 18.7: cumulative depth bars */
+
+.depth-cell {
+  /* --depth is set per row from data (0% to 100%). The gradient paints a
+     bar of that length from the cell's right edge, under the number. */
+  background: linear-gradient(
+    to left,
+    var(--depth-color) var(--depth),
+    transparent var(--depth)
+  );
+}
+
+.depth-cell--bid {
+  --depth-color: rgba(46, 160, 67, 0.18);
+}
+
+.depth-cell--ask {
+  --depth-color: rgba(207, 34, 46, 0.15);
+}

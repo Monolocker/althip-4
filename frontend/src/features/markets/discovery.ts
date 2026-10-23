@@ -117,6 +117,8 @@ export function getCloseBucket(
 
 function bucketOfTime(time: string | null, now: number): CloseBucket {
   if (time === null) {
+    return 'undated'
+  }
 
   const timeMs = Date.parse(time)
   if (Number.isNaN(timeMs)) {
@@ -129,7 +131,7 @@ function bucketOfTime(time: string | null, now: number): CloseBucket {
   if (remainingMs <= 7 * DAY_MS) return '1-7d'
   return 'over-7d'
 }
-}
+
 
 export function filterByCloseBucket(
   markets: OutcomeMarket[],
