@@ -7,6 +7,7 @@ import { formatPrice, formatTime, formatVolume } from '../utils/format'
 import BookQualityNote from './BookQualityNote'
 import { formatProbability, impliedProbability, isPriceUnreliable } from '../features/markets/pricing'
 import OrderBookPanel from './OrderBookPanel'
+import PriceChart from './PriceChart'
 import TimeValue from './TimeValue'
 
 
@@ -163,6 +164,8 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
           </p>
         )}
       </section>
+
+      <PriceChart marketId={market.id} isSettled={isSettled} />
 
       {detailError !== null && (
         <p className="detail-note detail-note--error">

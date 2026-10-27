@@ -763,3 +763,53 @@ button {
 .depth-cell--ask {
   --depth-color: rgba(207, 34, 46, 0.15);
 }
+
+
+/* Milestone 19.2: price history chart */
+
+.price-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 0.75rem;
+  touch-action: none;
+}
+
+.price-chart-grid {
+  stroke: #e5e5e5;
+  stroke-width: 1;
+}
+
+.price-chart-label {
+  fill: #777;
+  font-size: 11px;
+}
+
+.price-chart-line {
+  fill: none;
+  stroke: #1a1a1a;
+  stroke-width: 1.75;
+  stroke-linejoin: round;
+}
+
+.price-chart-dot {
+  fill: #1a1a1a;
+}
+
+.price-chart-crosshair {
+  stroke: #999;
+  stroke-dasharray: 3 3;
+}
+
+.price-chart-hover {
+  fill: #fff;
+  stroke: #1a1a1a;
+  stroke-width: 2;
+}
+
+.price-chart-readout {
+  margin: 0.25rem 0 0;
+  color: #555;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}

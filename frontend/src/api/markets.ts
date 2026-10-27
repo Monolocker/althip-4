@@ -1,4 +1,5 @@
 import type { OrderBook } from '../types/book'
+import type { CandleRange, PriceHistory } from '../types/candle'
 import type {
   OutcomeMarket,
   OutcomeMarketDetail,
@@ -35,6 +36,18 @@ export async function fetchMarketDetail(
   return requestJson<OutcomeMarketDetail>(
     `/markets/${encodeURIComponent(marketId)}`,
     `market ${marketId}`,
+    signal,
+  )
+}
+
+export async function fetchPriceHistory(
+  marketId: string,
+  range: CandleRange,
+  signal?: AbortSignal,
+): Promise<PriceHistory> {
+  return requestJson<PriceHistory>(
+    `/markets/${encodeURIComponent(marketId)}/candles?range=${range}`,
+    `price history for market ${marketId}`,
     signal,
   )
 }
