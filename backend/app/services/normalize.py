@@ -301,6 +301,20 @@ def question_ref(
         outcome_label=label,
     )
 
+def template_category(template: dict[str, Any] | None) -> str | None:
+    """'sports' from a template's trailing metadata, or None.
+    
+    The metadata cut from the rules in 18.1c ("metadata=category:sports|
+    subCategory:Basketball|...") is a spec string itself, so the existing
+    parse_spec reads it.
+    """
+    if template is None:
+        return None
+    _, marker, metadata = template.get("description", "").partition(METADATA_MARKER)
+    if not marker:
+        return None
+    return parse_spec(metadata).get("category") or None
+
 def template_rules(
     name: str, values: dict[str, str], templates: dict[str, dict[str, Any]]
 ) -> str | None:
@@ -522,6 +536,14 @@ def normalize_outcome(
         payout=payout_kind(name),
         parent=question_ref(
             outcome_id, raw, values, question, question_spec, templates
+        ),
+        category=(
+            template_category(_lookup_template(name, templates))
+            or template_category(
+                _lookup_template(question.get("name", ""), templates)
+                if question
+                else None
+            )
         ),
     )
 

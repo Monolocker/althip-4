@@ -90,6 +90,9 @@ class OutcomeMarket(BaseModel):
     payout: Literal["binary", "scalar"] = "binary"
     # Set when this market belongs to a multi-outcome question
     parent: QuestionRef | None = None
+    # HL's own category for the market's template
+    # e.g. "sports", "price", "culture". None when no template
+    category: str | None = None
 
 
 class QuestionMembership(BaseModel):

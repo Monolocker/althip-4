@@ -14,9 +14,11 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.deployers import DeployerStats
 from app.models.book import OrderBook
 from app.models.candle import CandleRange, PriceHistory
 from app.models.market import OutcomeMarket, OutcomeMarketDetail
+from app.services.analytics import deployer_stats
 from app.services.sweep import BookSweeper
 from app.services.hyperliquid import HyperliquidClient, HyperliquidError
 from app.services.normalize import (
@@ -372,3 +374,16 @@ async def market_candles(
     )
     cache[(coin, chart_range)] = (now, history)
     return history
+
+
+@app.get("/deployers")
+async def deployers() -> list[DeployerStats]:
+    """Per-deployer summary of the current snapshot (Milestone 20.1).
+
+    Computed on each request: a few hundred markets take well under a
+    millisecond to summarize, so caching would add code for no gain.
+    """
+    snapshot = await get_snapshot()
+    return deployer_stats(
+        snapshot.markets, snapshot.data.meta, datetime.now(timezone.utc)
+    )
