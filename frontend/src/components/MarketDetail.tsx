@@ -165,7 +165,7 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
         )}
       </section>
 
-      <PriceChart marketId={market.id} isSettled={isSettled} />
+      <PriceChart market={market} isSettled={isSettled} />
 
       {detailError !== null && (
         <p className="detail-note detail-note--error">

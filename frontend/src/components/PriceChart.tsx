@@ -1,4 +1,5 @@
 import { useState, type PointerEvent } from 'react'
+import { ApiError } from '../api/markets'
 import { usePriceHistory } from '../api/queries'
 import {
   INTERVAL_MS,
@@ -11,8 +12,13 @@ import {
   toPoints,
   valueDomain,
 } from '../features/markets/chart'
+import {
+  formatProbability,
+  pricesAreProbabilities,
+} from '../features/markets/pricing'
 import type { CandleRange, PriceHistory } from '../types/candle'
-import { formatPrice } from '../utils/format'
+import type { OutcomeMarket } from '../types/market'
+import { formatPrice, formatVolume } from '../utils/format'
 
 const RANGES: { value: CandleRange; label: string }[] = [
   { value: '1d', label: '1D' },
@@ -22,36 +28,59 @@ const RANGES: { value: CandleRange; label: string }[] = [
 ]
 
 // The chart is drawn in this coordinate system; the viewBox scales it to
-// whatever width the panel has. Padding leaves room for axis labels.
+// whatever width the panel has. Two stacked areas share one time axis:
+// the price line on top, the volume strip underneath (Milestone 19.3).
 const WIDTH = 640
-const HEIGHT = 220
-const PAD = { top: 12, right: 56, bottom: 26, left: 8 }
+const HEIGHT = 270
+const PAD = { left: 8, right: 56 }
+const PRICE_AREA = { top: 12, bottom: 186 }
+const VOLUME_AREA = { top: 198, bottom: 238 }
+const TIME_LABEL_Y = HEIGHT - 8
 
 interface ChartSvgProps {
   history: PriceHistory
+  // Shows a value as "21.6%" or "21.6¢" (19.3, decision 1).
+  formatValue: (value: number) => string
 }
 
-function ChartSvg({ history }: ChartSvgProps) {
+function ChartSvg({ history, formatValue }: ChartSvgProps) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
 
   const points = toPoints(history.candles)
   const first = points[0]
   const last = points[points.length - 1]
 
-  // Time runs left to right. Price runs bottom to top, so the y range is
-  // written [bottom, top]: SVG's y axis grows DOWNWARD.
+  // Time runs left to right and is shared by both areas. Price and volume
+  // run bottom to top, so their ranges are written [bottom, top]: SVG's
+  // y axis grows DOWNWARD.
   const xDomain: [number, number] = [first.time, last.time]
   const xRange: [number, number] = [PAD.left, WIDTH - PAD.right]
   const x = linearScale(xDomain, xRange)
   const xToTime = linearScale(xRange, xDomain)
   const yDomain = valueDomain(points)
-  const y = linearScale(yDomain, [HEIGHT - PAD.bottom, PAD.top])
+  const y = linearScale(yDomain, [PRICE_AREA.bottom, PRICE_AREA.top])
+
+  const maxVolume = Math.max(...points.map((point) => point.volume))
+  const volumeY = linearScale(
+    [0, maxVolume],
+    [VOLUME_AREA.bottom, VOLUME_AREA.top],
+  )
 
   // A step of up to 1.5 intervals counts as consecutive; anything longer
   // means candles are missing, and the line breaks there.
-  const maxStepMs = (INTERVAL_MS[history.interval] ?? Infinity) * 1.5
+  const intervalMs = INTERVAL_MS[history.interval] ?? Infinity
+  const maxStepMs = intervalMs * 1.5
   const path = linePath(points, x, y, maxStepMs)
   const dots = isolatedIndices(points, maxStepMs)
+
+  // One interval's width in pixels, 70% of it per bar so neighbours stay
+  // apart; a single-candle chart has no width to measure, so it falls
+  // back to a 6px interval (a ~4px bar).
+  const intervalPx =
+    points.length > 1 && Number.isFinite(intervalMs)
+      ? x(first.time + intervalMs) - x(first.time)
+      : 6
+  const barWidth = Math.max(1, intervalPx * 0.7)
 
   // Hover state can outlive a data change (new range, new market), so an
   // out-of-range index simply means "nothing hovered".
@@ -71,7 +100,7 @@ function ChartSvg({ history }: ChartSvgProps) {
         className="price-chart"
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
         role="img"
-        aria-label={`Price history, ${points.length} points, latest ${formatPrice(last.value)}`}
+        aria-label={`Price history, ${points.length} points, latest ${formatValue(last.value)}`}
         onPointerMove={handlePointerMove}
         onPointerLeave={() => setHoverIndex(null)}
       >
@@ -90,22 +119,10 @@ function ChartSvg({ history }: ChartSvgProps) {
               y={y(value)}
               dominantBaseline="middle"
             >
-              {formatPrice(value)}
+              {formatValue(value)}
             </text>
           </g>
         ))}
-
-        <text className="price-chart-label" x={PAD.left} y={HEIGHT - 6}>
-          {formatChartTime(first.time, history.interval)}
-        </text>
-        <text
-          className="price-chart-label"
-          x={WIDTH - PAD.right}
-          y={HEIGHT - 6}
-          textAnchor="end"
-        >
-          {formatChartTime(last.time, history.interval)}
-        </text>
 
         <path className="price-chart-line" d={path} />
 
@@ -119,14 +136,63 @@ function ChartSvg({ history }: ChartSvgProps) {
           />
         ))}
 
+        {/* Volume strip: one bar per candle that had trading volume. An
+            interval with no volume has no bar, which is what makes "the
+            line was flat because nobody traded" visible. */}
+        <line
+          className="price-chart-grid"
+          x1={PAD.left}
+          x2={WIDTH - PAD.right}
+          y1={VOLUME_AREA.bottom}
+          y2={VOLUME_AREA.bottom}
+        />
+        {points.map((point, index) =>
+          point.volume > 0 ? (
+            <rect
+              key={point.time}
+              className={
+                index === hoverIndex
+                  ? 'price-chart-volume price-chart-volume--hovered'
+                  : 'price-chart-volume'
+              }
+              x={x(point.time) - barWidth / 2}
+              y={volumeY(point.volume)}
+              width={barWidth}
+              height={VOLUME_AREA.bottom - volumeY(point.volume)}
+            />
+          ) : null,
+        )}
+        {maxVolume > 0 && (
+          <text
+            className="price-chart-label"
+            x={WIDTH - PAD.right + 6}
+            y={VOLUME_AREA.top}
+            dominantBaseline="hanging"
+          >
+            {`Vol ${formatVolume(maxVolume)}`}
+          </text>
+        )}
+
+        <text className="price-chart-label" x={PAD.left} y={TIME_LABEL_Y}>
+          {formatChartTime(first.time, history.interval)}
+        </text>
+        <text
+          className="price-chart-label"
+          x={WIDTH - PAD.right}
+          y={TIME_LABEL_Y}
+          textAnchor="end"
+        >
+          {formatChartTime(last.time, history.interval)}
+        </text>
+
         {hovered !== null && (
           <g>
             <line
               className="price-chart-crosshair"
               x1={x(hovered.time)}
               x2={x(hovered.time)}
-              y1={PAD.top}
-              y2={HEIGHT - PAD.bottom}
+              y1={PRICE_AREA.top}
+              y2={VOLUME_AREA.bottom}
             />
             <circle
               className="price-chart-hover"
@@ -140,24 +206,40 @@ function ChartSvg({ history }: ChartSvgProps) {
 
       <p className="price-chart-readout">
         {hovered !== null ? '' : 'Latest: '}
-        <strong>{formatPrice(shown.value)}</strong> ·{' '}
+        <strong>{formatValue(shown.value)}</strong> ·{' '}
         {formatChartTime(shown.time, history.interval)} · {shown.trades}{' '}
-        {shown.trades === 1 ? 'trade' : 'trades'}
+        {shown.trades === 1 ? 'trade' : 'trades'} · vol{' '}
+        {formatVolume(shown.volume)}
       </p>
     </>
   )
 }
 
+// The honest message for a failed request: a 404 means the history no
+// longer exists, anything else is (probably) temporary.
+function errorMessage(error: Error): string {
+  if (error instanceof ApiError && error.status === 404) {
+    return 'Price history is unavailable: this market has settled or is no longer listed.'
+  }
+  return `Could not load price history right now (${error.message}). It will retry automatically.`
+}
+
 interface PriceChartProps {
-  marketId: string
+  market: OutcomeMarket
   isSettled: boolean
 }
 
 // Price history of the market's first side, from Hyperliquid candles
 // (Milestone 19). The selected range survives switching markets.
-function PriceChart({ marketId, isSettled }: PriceChartProps) {
+function PriceChart({ market, isSettled }: PriceChartProps) {
   const [range, setRange] = useState<CandleRange>('1w')
-  const history = usePriceHistory(marketId, range, !isSettled)
+  const history = usePriceHistory(market.id, range, !isSettled)
+
+  // Same rule as the "Market-implied probability" line (18.4): percent
+  // only when this market's prices really are probabilities.
+  const formatValue = pricesAreProbabilities(market)
+    ? formatProbability
+    : formatPrice
 
   let body
   if (isSettled) {
@@ -171,13 +253,13 @@ function PriceChart({ marketId, isSettled }: PriceChartProps) {
   } else if (history.isError) {
     body = (
       <p className="detail-note detail-note--error">
-        Could not load price history: {history.error.message}
+        {errorMessage(history.error)}
       </p>
     )
   } else if (history.data.candles.length === 0) {
     body = <p className="detail-note">No trading history yet.</p>
   } else {
-    body = <ChartSvg history={history.data} />
+    body = <ChartSvg history={history.data} formatValue={formatValue} />
   }
 
   return (

@@ -7,6 +7,20 @@ import type {
 
 const API_BASE_URL = 'http://127.0.0.1:8000'
 
+// An HTTP error from our backend that keeps its status code, so callers
+// can tell "this doesn't exist" (404) from "try again later" (502)
+// (Milestone 19.3). It extends Error, so existing code that only reads
+// `.message` keeps working unchanged.
+export class ApiError extends Error {
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
 async function requestJson<T>(
   path: string,
   label: string,
@@ -15,8 +29,9 @@ async function requestJson<T>(
   const response = await fetch(`${API_BASE_URL}${path}`, { signal })
 
   if (!response.ok) {
-    throw new Error(
+    throw new ApiError(
       `Failed to fetch ${label}: ${response.status} ${response.statusText}`,
+      response.status,
     )
   }
 

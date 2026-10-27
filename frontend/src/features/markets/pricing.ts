@@ -15,9 +15,14 @@ export function impliedProbability(
   market: OutcomeMarket,
   side: OutcomeSide,
 ): number | null {
-  if (market.payout !== 'binary') return null
-  if (isPriceUnreliable(market)) return null
-  return side.price
+  return pricesAreProbabilities(market) ? side.price : null
+}
+
+// Whether this market's prices can be read as probabilities at all
+// (binary payout, usable book). Shared by implied probability and by 
+// the price chart's axis units (M19.3)
+export function pricesAreProbabilities(market: OutcomeMarket): boolean {
+  return market.payout === 'binary' && !isPriceUnreliable(market)
 }
 
 // One definition of "this market's price means nothing", shared by 

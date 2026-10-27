@@ -1,6 +1,7 @@
 import { skipToken, useQuery } from '@tanstack/react-query'
 import type { CandleRange } from '../types/candle'
 import {
+    ApiError,
     fetchMarketDetail,
     fetchMarkets,
     fetchPriceHistory,
@@ -62,6 +63,11 @@ export function usePriceHistory(
                 : ({ signal }) => fetchPriceHistory(marketId, range, signal),
         staleTime: PRICE_HISTORY_MS,
         refetchInterval: PRICE_HISTORY_MS,
+        // Retrying a 404 cannot help: the market's history is gone
+        // (settled). Anything else (502, network) gets the usual 3 tries.
+        retry: (failureCount, error) =>
+            !(error instanceof ApiError && error.status === 404) &&
+            failureCount < 3,
     })
 }
 

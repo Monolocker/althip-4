@@ -8,6 +8,7 @@ export interface ChartPoint {
   time: number // ms since epoch, start of the candle
   value: number // close price, 0..1
   trades: number
+  volume: number // contracts traded in the interval
 }
 
 // Hyperliquid interval -> its length, used to recognise missing candles.
@@ -23,6 +24,7 @@ export function toPoints(candles: Candle[]): ChartPoint[] {
     time: Date.parse(candle.time),
     value: candle.close,
     trades: candle.trades,
+    volume: candle.volume, 
   }))
 }
 
