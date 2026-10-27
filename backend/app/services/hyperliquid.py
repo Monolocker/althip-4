@@ -133,6 +133,38 @@ class HyperliquidClient:
             )
         return data
     
+    async def fetch_candles(
+            self, coin: str, interval: str, start_ms: int, end_ms: int
+    ) -> list[dict[str, Any]]:
+        """Fetch OHLCV candles over a particular time window
+        
+        Rate-limit weight 20, plus 1 per 60 candles returned; at most 5000
+        candles per response. Observed for outcome coins (Milestone 19):
+          - a live coin that has never traded returns 200 with []
+          - a settled coin returns HTTP 500: history is gone at settlement
+          - side 1's candles mirror side 0's exactly (close0 + close1 = 1)
+
+        Raw candle: {"t": start ms, "T": end ms, "s": coin, "i": interval,
+                     "o"/"h"/"l"/"c": price strings, "v": volume string,
+                     "n": trade count}
+        """
+        data = await self._post_info(
+            {
+                "type": "candleSnapshot",
+                "req": {
+                    "coin": coin,
+                    "interval": interval,
+                    "startTime": start_ms,
+                    "endTime": end_ms,
+                }
+            }
+        )
+        if not isinstance(data, list):
+            raise HyperliquidError(
+                f"Unexpected candleSnapshot response shape: {type(data).__name__}"
+            )
+        return data
+    
     async def _post_info(self, body: dict[str, Any]) -> Any:
         """POST a request body to the info endpoint and return parsed JSON"""
         try:

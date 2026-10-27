@@ -17,6 +17,7 @@ from app.models.market import (
 )
 
 from app.models.book import BookLevel, OrderBook
+from app.models.candle import Candle
 
 
 logger = logging.getLogger(__name__)
@@ -667,6 +668,33 @@ def _parse_levels(raw_levels: Any) -> list[BookLevel]:
         except (KeyError, TypeError, ValueError):
             logger.warning("Skipping malformed book level: %r", raw)
     return levels
+
+def normalize_candles(raw_candles: list[Any]) -> list[Candle]:
+    """Convert raw candleSnapshot items into Candles, oldest first.
+
+    A malformed candle is skipped and logged, never fatal: one bad
+    interval should not blank a whole chart.
+    """
+    candles: list[Candle] = []
+    for raw in raw_candles:
+        try:
+            candles.append(
+                Candle(
+                    time=datetime.fromtimestamp(
+                        int(raw["t"]) / 1000, tz=timezone.utc
+                    ),
+                    open=float(raw["o"]),
+                    high=float(raw["h"]),
+                    low=float(raw["l"]),
+                    close=float(raw["c"]),
+                    volume=float(raw["v"]),
+                    trades=int(raw["n"]),
+                )
+            )
+        except (KeyError, TypeError, ValueError):
+            logger.warning("Skipping malformed candle: %r", raw)
+    candles.sort(key=lambda candle: candle.time)
+    return candles
 
 def normalize_order_book(raw: dict[str, Any], side_index: int) -> OrderBook:
     """Convert a raw l2Book response into domain's OrderBook model.
