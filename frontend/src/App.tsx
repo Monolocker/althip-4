@@ -1,11 +1,15 @@
 import { useState } from "react"
 import { useMarketDetail, useMarkets } from "./api/queries"
 import CloseBucketFilter from "./components/CloseBucketFilter"
+import DeployerDirectory from "./components/DeployerDirectory"
 import DeployerFilter from "./components/DeployerFilter"
 import MarketDetail from "./components/MarketDetail"
 import MarketList from "./components/MarketList"
 import MarketSearch from "./components/MarketSearch"
 import MarketSort from "./components/MarketSort"
+import SidebarViewSwitch, {
+  type SidebarView,
+} from "./components/SidebarViewSwitch"
 import {
   countByVenue,
   countCloseBuckets,
@@ -32,6 +36,7 @@ function App() {
   const [sortMode, setSortMode] = useState<SortMode>("default")
   // null = all deployers; "" = markets with no venue.
   const [venueFilter, setVenueFilter] = useState<string | null>(null)
+  const [sidebarView, setSidebarView] = useState<SidebarView>("markets")
 
   const now = useNow(CLOCK_TICK_MS)
   const marketsQuery = useMarkets()
@@ -87,6 +92,13 @@ function App() {
     setSelectedMarketId(marketId)
   }
 
+  // Decision 1: choosing a deployer reuses the 17.4 deployer filter
+  // then shows the market list it now filters 
+  function handleSelectVenue(venue: string) {
+    setVenueFilter(venue)
+    setSidebarView("markets")
+  }
+
   let workspaceTitle = "Select a market"
   let workspaceMessage =
     "Choose a market from the list to inspect its details"
@@ -110,7 +122,14 @@ function App() {
 
       <div className="terminal-layout">
         <aside className="market-sidebar">
-          {marketsQuery.isPending ? (
+          <SidebarViewSwitch value={sidebarView} onChange={setSidebarView} />
+          
+          {sidebarView === "deployers" ? (
+            <DeployerDirectory
+              activeVenue={venueFilter}
+              onSelectVenue={handleSelectVenue}
+              />
+          ) : marketsQuery.isPending ? (
             <p className="request-status">Loading markets...</p>
           ) : listError !== null ? (
             <div className="request-status request-status--error">

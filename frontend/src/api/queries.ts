@@ -2,6 +2,7 @@ import { skipToken, useQuery } from '@tanstack/react-query'
 import type { CandleRange } from '../types/candle'
 import {
     ApiError,
+    fetchDeployers,
     fetchMarketDetail,
     fetchMarkets,
     fetchPriceHistory,
@@ -17,6 +18,7 @@ export const marketKeys = {
     // you already viewed is instant.
     priceHistory: (marketId: string | null, range: CandleRange) =>
         ['markets', 'priceHistory', marketId, range] as const,
+    deployers: ['deployers'] as const,
 }
 
 // Backend snapshots refreshes every 15s, so data younger than 15s
@@ -71,3 +73,15 @@ export function usePriceHistory(
     })
 }
 
+
+// Deployer stats are summarized from the same 15s backend snapshot as the
+// market list, so they share its freshness and polling. The query only
+// runs while the Deployers view is on screen (its component is mounted).
+export function useDeployers() {
+    return useQuery({
+        queryKey: marketKeys.deployers,
+        queryFn: ({ signal }) => fetchDeployers(signal),
+        staleTime: SERVER_CACHE_MS,
+        refetchInterval: POLL_MS,
+    })
+}

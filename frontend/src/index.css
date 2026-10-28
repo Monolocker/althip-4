@@ -824,3 +824,96 @@ button {
 .price-chart-volume--hovered {
   fill: #1a1a1a;
 }
+
+
+/* Milestone 20.1b: Markets | Deployers switch and deployer directory */
+
+.sidebar-view-switch {
+  margin-bottom: 1rem;
+}
+
+/* The sticky controls pull themselves up by 1rem to sit flush with the
+   sidebar's top edge; under the switch they must not overlap it. */
+.sidebar-view-switch + .market-controls {
+  margin-top: 0;
+  border-radius: 0;
+}
+
+.deployer-card {
+  display: grid;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.deployer-card:hover {
+  background: #fafafa;
+}
+
+.deployer-card--active {
+  border: 2px solid #333;
+}
+
+.deployer-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.deployer-card-address,
+.deployer-card-muted {
+  color: #777;
+  font-size: 0.8rem;
+}
+
+.deployer-card-line {
+  font-size: 0.85rem;
+}
+
+.deployer-card-top {
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.deployer-card-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.deployer-card-category {
+  padding: 0.1rem 0.45rem;
+  border: 1px solid #ddd;
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+
+.quality-bar {
+  display: flex;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #eee;
+}
+
+.quality-bar-segment--tight {
+  background: #2e7d44;
+}
+
+.quality-bar-segment--wide {
+  background: #c9a227;
+}
+
+.quality-bar-segment--unreliable {
+  background: #b33a3a;
+}
+
+.quality-bar-segment--unknown {
+  background: #cfcfcf;
+}

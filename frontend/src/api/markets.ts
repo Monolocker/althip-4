@@ -1,5 +1,6 @@
 import type { OrderBook } from '../types/book'
 import type { CandleRange, PriceHistory } from '../types/candle'
+import type { DeployerStats } from '../types/deployer'
 import type {
   OutcomeMarket,
   OutcomeMarketDetail,
@@ -53,6 +54,12 @@ export async function fetchMarketDetail(
     `market ${marketId}`,
     signal,
   )
+}
+
+export async function fetchDeployers(
+  signal?: AbortSignal,
+): Promise<DeployerStats[]> {
+  return requestJson<DeployerStats[]>('/deployers', 'deployers', signal)
 }
 
 export async function fetchPriceHistory(
