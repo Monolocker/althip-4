@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { useMarketDetail, useMarkets } from "./api/queries"
+import ActiveFilters, { type ActiveFilter } from "./components/ActiveFilters"
 import ChipFilter from "./components/ChipFilter"
 import CloseBucketFilter from "./components/CloseBucketFilter"
 import DeployerDirectory from "./components/DeployerDirectory"
@@ -11,6 +12,7 @@ import SidebarViewSwitch, {
   type SidebarView,
 } from "./components/SidebarViewSwitch"
 import {
+  CLOSE_FILTER_LABELS,
   categoryLabel,
   countByCategory,
   countByVenue,
@@ -108,6 +110,49 @@ function App() {
     setSelectedMarketId(marketId)
   }
 
+  // Every filter currently narrowing the list, each with its own way to
+  // undo it (Milestone 20.1d). Built from the same state the chips use,
+  // so the two can never disagree. Sort order is not a filter: it never
+  // hides a market, so it is not listed and not reset.
+  const activeFilters: ActiveFilter[] = []
+  if (searchQuery.trim() !== "") {
+    activeFilters.push({
+      key: "search",
+      label: `Search: “${searchQuery.trim()}”`,
+      onRemove: () => setSearchQuery(""),
+    })
+  }
+  if (categoryFilter !== null) {
+    activeFilters.push({
+      key: "category",
+      label: `Category: ${categoryLabel(categoryFilter)}`,
+      onRemove: () => setCategoryFilter(null),
+    })
+  }
+  if (venueFilter !== null) {
+    activeFilters.push({
+      key: "deployer",
+      label: `Deployer: ${venueLabel(venueFilter)}`,
+      onRemove: () => setVenueFilter(null),
+    })
+  }
+  if (closeFilter !== "all") {
+    activeFilters.push({
+      key: "time",
+      label: `Time: ${CLOSE_FILTER_LABELS[closeFilter]}`,
+      onRemove: () => setCloseFilter("all"),
+    })
+  }
+
+  // Four state updates in one click handler are batched by React into a
+  // single re-render, so the list never flashes a half-reset state.
+  function resetFilters() {
+    setSearchQuery("")
+    setCategoryFilter(null)
+    setVenueFilter(null)
+    setCloseFilter("all")
+  }
+  
   // Decision 1: choosing a deployer reuses the 17.4 deployer filter
   // then shows the market list it now filters 
   function handleSelectVenue(venue: string) {
@@ -155,6 +200,10 @@ function App() {
           ) : (
             <>
               <div className="market-controls">
+                <ActiveFilters
+                  filters={activeFilters}
+                  onResetAll={resetFilters}
+                  />
                 <MarketSearch
                   value={searchQuery}
                   onChange={setSearchQuery}

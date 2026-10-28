@@ -520,8 +520,20 @@ button {
 }
 
 .filter-chip:disabled {
-  opacity: 0.4;
-  cursor: default;
+  /* Readable but clearly unavailable (Milestone 20.1d): muted text with
+     real contrast and a dashed border, instead of fading the whole chip
+     with opacity. #767676 is the lightest grey that keeps a 4.5:1
+     contrast ratio on white, the usual readability guideline. */
+  border-style: dashed;
+  background: #fafafa;
+  color: #767676;
+  cursor: not-allowed;
+}
+
+/* The count normally fades to 70%; on a disabled chip that would push
+   the "0" below readable contrast, so it keeps the full muted colour. */
+.filter-chip:disabled .filter-chip-count {
+  opacity: 1;
 }
 
 .filter-chip--active {
@@ -916,4 +928,57 @@ button {
 
 .quality-bar-segment--unknown {
   background: #cfcfcf;
+}
+
+
+/* Milestone 20.1d: active filters with per-filter and reset-all removal */
+
+.active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+  padding: 0.6rem;
+  border: 1px solid #e3e3e3;
+  border-radius: 8px;
+  background: #f7f7f7;
+}
+
+.active-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid #1a1a1a;
+  border-radius: 999px;
+  background: #1a1a1a;
+  color: #fff;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.active-filter:hover {
+  background: #333;
+}
+
+.active-filter-remove {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.active-filters-reset {
+  margin-left: auto;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.active-filters-reset:hover {
+  background: #eee;
 }
