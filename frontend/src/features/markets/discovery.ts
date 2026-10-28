@@ -7,7 +7,7 @@ import { isPriceUnreliable } from './pricing'
 // feature in Milestone 17 (search, time buckets, sort modes) lands
 // here as another small function the UI composes.
 //
-// Pipeline (see App.tsx): search -> deployer + time filters (on
+// Pipeline (see App.tsx): search -> category + deployer + time filters (on
 // outcomes) -> group into list entries (grouping.ts) -> sort entries
 
 // ---------------------------------------------------------------
@@ -167,51 +167,100 @@ export function countCloseBuckets(
 }
 
 // ---------------------------------------------------------------
-// Deployers
+// Open-set facets: deployers and categories
 // ---------------------------------------------------------------
 
-// Each deployer owns exactly one venue (one entry per venue in
-// outcomeMeta.deployers), so filtering by venue is filtering by
-// deployer. Unlike time buckets, venues are an OPEN set: new deployers
-// can appear at any time, so a venue is a plain string, not a union,
-// and the list of venues is derived from the data instead of hard-coded.
+// Deployers (17.4) and categories (20.1c) are OPEN sets: Hyperliquid can
+// add a new venue or category at any time, so each is a plain string and
+// its chips are derived from the data, never hard-coded. Both need the
+// same three operations (count, list, filter), so they share them here,
+// parameterized by how a market's key is read. (Time buckets are a
+// CLOSED set with a fixed order, so they keep their own code above.)
 
-// The backend sends "" for markets with no venue (Hyperliquid's
-// "Recurring" markets). "" is a real value meaning "no venue"; it is
-// different from the filter value null, which means "all deployers".
+type MarketKey = (market: OutcomeMarket) => string
+
+function countByKey(markets: OutcomeMarket[], key: MarketKey): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const market of markets) {
+    const value = key(market)
+    counts.set(value, (counts.get(value) ?? 0) + 1)
+  }
+  return counts
+}
+
+// Every value present in the data, largest first (ties by name). Taken
+// from the full market list so the chip order stays put while other
+// filters change the counts.
+function listKeys(markets: OutcomeMarket[], key: MarketKey): string[] {
+  return [...countByKey(markets, key).entries()]
+    .sort(([aValue, aCount], [bValue, bCount]) =>
+      bCount !== aCount ? bCount - aCount : aValue.localeCompare(bValue),
+    )
+    .map(([value]) => value)
+}
+
+// null means "no filter on this facet".
+function filterByKey(
+  markets: OutcomeMarket[],
+  key: MarketKey,
+  value: string | null,
+): OutcomeMarket[] {
+  return value === null ? markets : markets.filter((m) => key(m) === value)
+}
+
+// --- Deployers ---------------------------------------------------
+
+// Each deployer owns exactly one venue, so filtering by venue is
+// filtering by deployer. The backend sends "" for Hyperliquid's own
+// markets: "" is a real value, unlike the filter value null ("all").
+const venueOf: MarketKey = (market) => market.venue
+
 export function venueLabel(venue: string): string {
-    return venue === '' ? 'Hyperliquid' : venue
-  }
-  
-  export function countByVenue(markets: OutcomeMarket[]): Map<string, number> {
-    const counts = new Map<string, number>()
-    for (const market of markets) {
-      counts.set(market.venue, (counts.get(market.venue) ?? 0) + 1)
-    }
-    return counts
-  }
-  
-  // Every venue present in the data, largest first (ties by name). Taken
-  // from the full market list so the chip order stays put while other
-  // filters change the counts.
-  export function listVenues(markets: OutcomeMarket[]): string[] {
-    return [...countByVenue(markets).entries()]
-      .sort(([aVenue, aCount], [bVenue, bCount]) =>
-        bCount !== aCount ? bCount - aCount : aVenue.localeCompare(bVenue),
-      )
-      .map(([venue]) => venue)
-  }
-  
-  // null means "no deployer filter".
-  export function filterByVenue(
-    markets: OutcomeMarket[],
-    venue: string | null,
-  ): OutcomeMarket[] {
-    if (venue === null) {
-      return markets
-    }
-    return markets.filter((market) => market.venue === venue)
-  }
+  return venue === '' ? 'Hyperliquid' : venue
+}
+
+export function countByVenue(markets: OutcomeMarket[]): Map<string, number> {
+  return countByKey(markets, venueOf)
+}
+
+export function listVenues(markets: OutcomeMarket[]): string[] {
+  return listKeys(markets, venueOf)
+}
+
+export function filterByVenue(
+  markets: OutcomeMarket[],
+  venue: string | null,
+): OutcomeMarket[] {
+  return filterByKey(markets, venueOf, venue)
+}
+
+// --- Categories (Milestone 20.1c) ----------------------------------
+
+// Markets without a template category (Hyperliquid's own recurring
+// markets) are grouped as "uncategorized", the same name the backend's
+// deployer stats use, so the two views count identically.
+const UNCATEGORIZED = 'uncategorized'
+const categoryOf: MarketKey = (market) => market.category ?? UNCATEGORIZED
+
+// "sports" -> "Sports"
+export function categoryLabel(category: string): string {
+  return category.charAt(0).toUpperCase() + category.slice(1)
+}
+
+export function countByCategory(markets: OutcomeMarket[]): Map<string, number> {
+  return countByKey(markets, categoryOf)
+}
+
+export function listCategories(markets: OutcomeMarket[]): string[] {
+  return listKeys(markets, categoryOf)
+}
+
+export function filterByCategory(
+  markets: OutcomeMarket[],
+  category: string | null,
+): OutcomeMarket[] {
+  return filterByKey(markets, categoryOf, category)
+}
 
 // ---------------------------------------------------------------
 // Sorting

@@ -54,6 +54,9 @@ export interface OutcomeMarket {
     payout: "binary" | "scalar"
     // Set when this outcome belong to a multi-outcome question
     parent: QuestionRef | null
+    // Hyperliquid's category for the market's template, e.g. "sports"
+    // Null when no template says
+    category: string | null
 }
 
 export interface QuestionMembership {

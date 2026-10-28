@@ -1,8 +1,8 @@
 import { useState } from "react"
 import { useMarketDetail, useMarkets } from "./api/queries"
+import ChipFilter from "./components/ChipFilter"
 import CloseBucketFilter from "./components/CloseBucketFilter"
 import DeployerDirectory from "./components/DeployerDirectory"
-import DeployerFilter from "./components/DeployerFilter"
 import MarketDetail from "./components/MarketDetail"
 import MarketList from "./components/MarketList"
 import MarketSearch from "./components/MarketSearch"
@@ -11,13 +11,18 @@ import SidebarViewSwitch, {
   type SidebarView,
 } from "./components/SidebarViewSwitch"
 import {
+  categoryLabel,
+  countByCategory,
   countByVenue,
   countCloseBuckets,
+  filterByCategory,
   filterByCloseBucket,
   filterByVenue,
+  listCategories,
   listVenues,
   searchMarkets,
   sortEntries,
+  venueLabel,
   type CloseFilter,
   type SortMode,
 } from "./features/markets/discovery"
@@ -37,6 +42,8 @@ function App() {
   // null = all deployers; "" = markets with no venue.
   const [venueFilter, setVenueFilter] = useState<string | null>(null)
   const [sidebarView, setSidebarView] = useState<SidebarView>("markets")
+  // null = all categories.
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
 
   const now = useNow(CLOCK_TICK_MS)
   const marketsQuery = useMarkets()
@@ -45,22 +52,31 @@ function App() {
   const markets = marketsQuery.data ?? []
 
   // Discovery pipeline, all derived on every render:
-  //   search -> deployer filter + time filter -> sort
+  //   search -> category + deployer + time filters -> group -> sort
   // Faceted counts: each chip group counts the markets that pass every
   // OTHER active filter, so a chip's number is exactly how many markets
-  // you would see by clicking it.
+  // you would see by clicking it. With three facets, each count set
+  // applies the two filters that are not its own.
   const searchedMarkets = searchMarkets(markets, searchQuery)
-  const byVenue = filterByVenue(searchedMarkets, venueFilter)
-  const byTime = filterByCloseBucket(searchedMarkets, closeFilter, now)
+  const byCategory = filterByCategory(searchedMarkets, categoryFilter)
+  const byCategoryVenue = filterByVenue(byCategory, venueFilter)
+  const byCategoryTime = filterByCloseBucket(byCategory, closeFilter, now)
+  const byVenueTime = filterByCloseBucket(
+    filterByVenue(searchedMarkets, venueFilter),
+    closeFilter,
+    now,
+  )
 
-  const closeCounts = countCloseBuckets(byVenue, now)
-  const venueCounts = countByVenue(byTime)
+  const categoryCounts = countByCategory(byVenueTime)
+  const venueCounts = countByVenue(byCategoryTime)
+  const closeCounts = countCloseBuckets(byCategoryVenue, now)
   // Chip order comes from the full list so it doesn't jump around.
+  const categories = listCategories(markets)
   const venues = listVenues(markets)
 
   // Filters work on outcomes; then outcomes of the same question are
   // grouped into one card, and the cards are sorted (Milestone 18.6b).
-  const visibleMarkets = filterByCloseBucket(byVenue, closeFilter, now)
+  const visibleMarkets = filterByCloseBucket(byCategoryVenue, closeFilter, now)
   const entries = sortEntries(
     groupEntries(visibleMarkets, markets),
     sortMode,
@@ -145,12 +161,23 @@ function App() {
                   resultCount={searchedMarkets.length}
                   totalCount={markets.length}
                 />
-                <DeployerFilter
-                  venues={venues}
+                <ChipFilter
+                  label="Category"
+                  options={categories}
+                  counts={categoryCounts}
+                  totalCount={byVenueTime.length}
+                  value={categoryFilter}
+                  onChange={setCategoryFilter}
+                  formatLabel={categoryLabel}
+                />
+                <ChipFilter
+                  label="Deployer"
+                  options={venues}
                   counts={venueCounts}
-                  totalCount={byTime.length}
+                  totalCount={byCategoryTime.length}
                   value={venueFilter}
                   onChange={setVenueFilter}
+                  formatLabel={venueLabel}
                 />
                 <CloseBucketFilter
                   value={closeFilter}
