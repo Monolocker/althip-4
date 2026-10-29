@@ -5,7 +5,9 @@ import {
   formatProbability,
   impliedProbability,
   isPriceUnreliable,
+  visibleChange,
 } from '../features/markets/pricing'
+import ChangeBadge from './ChangeBadge'
 import type { OutcomeMarket } from '../types/market'
 import { formatPrice, formatTime, formatVolume } from '../utils/format'
 
@@ -76,6 +78,7 @@ function QuestionCard({ entry, selectedMarketId, onSelect }: QuestionCardProps) 
           const probability = rowProbability(market)
           const selected = market.id === selectedMarketId
           const unreliable = isPriceUnreliable(market)
+          const change = visibleChange(market)
           const classes = ['question-row']
           if (unreliable) classes.push('question-row--unreliable')
           if (selected) classes.push('question-row--selected')
@@ -91,13 +94,16 @@ function QuestionCard({ entry, selectedMarketId, onSelect }: QuestionCardProps) 
                 <span className="question-row-label">
                   {market.parent?.outcomeLabel ?? market.question}
                 </span>
+              <span className="question-row-value">
+                {change !== null && <ChangeBadge change={change} />}
                 <strong>
                   {probability !== null
                     ? formatProbability(probability)
                     : formatPrice(market.sides[0]?.price ?? null)}
                 </strong>
-              </button>
-            </li>
+              </span>
+            </button>
+          </li>
           )
         })}
       </ul>

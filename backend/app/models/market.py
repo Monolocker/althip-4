@@ -82,6 +82,13 @@ class OutcomeMarket(BaseModel):
     # traded across both sides of the outcome market. None when HL
     # reported no trading context
     volume_24h: float | None = Field(default=None, alias="volume24h")
+    # Side-0 price about 24h ago (HL prevDayPx; observed in 20.2 to match
+    # the candle from 24h earlier within ~0.3c). None when HL reports 0.0,
+    # which means "no history" (never traded, or younger than a day).
+    price_24h_ago: float | None = Field(default=None, alias="price24hAgo")
+    # Current side-0 price minus price_24h_ago, in price units (0.054 =
+    # +5.4 percentage points). None whenever either price is missing.
+    change_24h: float | None = Field(default=None, alias="change24h")
     # Side-0 book quality; None when there is no evidence either way
     book: BookSummary | None = None
     # "binary" = each sides settles to $1 or $0. Thus, a side's price

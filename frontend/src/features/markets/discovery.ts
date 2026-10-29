@@ -1,6 +1,6 @@
 import type { OutcomeMarket } from '../../types/market'
 import { entryMembers, type ListEntry } from './grouping'
-import { isPriceUnreliable } from './pricing'
+import { isMoverEligible, isPriceUnreliable } from './pricing'
 
 // Discovery logic: pure functions that take markets in and return
 // markets out. No React, no fetching, no state. Every discovery
@@ -266,14 +266,15 @@ export function filterByCategory(
 // Sorting
 // ---------------------------------------------------------------
 
-export type SortMode = 'default' | 'trending' | 'soonest' | 'newest'
+export type SortMode = 'default' | 'trending' | 'movers' | 'soonest' | 'newest'
 
 // Display order of the sort options.
-export const SORT_MODES: SortMode[] = ['default', 'trending', 'soonest', 'newest']
+export const SORT_MODES: SortMode[] = ['default', 'trending', 'movers', 'soonest', 'newest']
 
 export const SORT_MODE_LABELS: Record<SortMode, string> = {
   default: 'Recommended',
   trending: 'Trending (24h volume)',
+  movers: 'Biggest movers (24h)',
   soonest: 'Happening soonest',
   newest: 'Newest',
 }
@@ -294,6 +295,16 @@ interface SortKeys {
   volume: number | null
   unreliable: boolean
   newestId: number
+  // Size of the 24h move (in price units) for entries that qualify as
+  // movers; null for everything else
+  move: number | null
+}
+
+function biggestMove(markets: OutcomeMarket[]): number | null {
+  const moves = markets
+    .filter(isMoverEligible)
+    .map((market) => Math.abs(market.change24h ?? 0))
+  return moves.length > 0 ? Math.max(...moves) : null
 }
 
 // Decisions from 18.6b: a question sorts by its shared event time, by the
@@ -307,6 +318,7 @@ function sortKeys(entry: ListEntry): SortKeys {
       volume: market.volume24h,
       unreliable: isPriceUnreliable(market),
       newestId: Number(market.id),
+      move: biggestMove([market]),
     }
   }
 
@@ -328,6 +340,7 @@ function sortKeys(entry: ListEntry): SortKeys {
         : null,
     unreliable: named.every(isPriceUnreliable),
     newestId: Math.max(...members.map((market) => Number(market.id))),
+    move: biggestMove(named),
   }
 }
 
@@ -386,6 +399,19 @@ function compareTrending(a: SortKeys, b: SortKeys): number {
   return 0
 }
 
+// Biggest movers (Milestone 20.2): qualifying entries by the size of
+// their 24h move, largest first; everything that does not qualify (no
+// history, unreliable book, too little volume) is demoted below them,
+// never hidden. Same shape as Recommended's demotion in 18.5.
+function compareMovers(a: SortKeys, b: SortKeys): number {
+  if (a.move !== null && b.move !== null) {
+    return b.move - a.move
+  }
+  if (a.move !== null) return -1
+  if (b.move !== null) return 1
+  return 0
+}
+
 // Newest: highest outcome id first. ASSUMPTION: Hyperliquid assigns
 // outcome ids in increasing order as markets are created. Observed in
 // live data (e.g. later recurring BTC markets have higher ids), but
@@ -403,6 +429,8 @@ function comparatorFor(
       return (a, b) => compareRecommended(a, b, now)
     case 'trending':
       return compareTrending
+    case 'movers':
+      return compareMovers
     case 'soonest':
       return (a, b) => compareSoonest(a, b, now)
     case 'newest':

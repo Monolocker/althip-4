@@ -982,3 +982,33 @@ button {
 .active-filters-reset:hover {
   background: #eee;
 }
+
+
+/* Milestone 20.2: 24h change badges */
+
+.change-badge {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.change-badge--up {
+  color: #2e7d44;
+}
+
+.change-badge--down {
+  color: #b33a3a;
+}
+
+.change-badge--flat {
+  color: #777;
+}
+
+.question-row-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.question-row-value .change-badge {
+  font-size: 0.75rem;
+}

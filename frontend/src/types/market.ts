@@ -47,6 +47,8 @@ export interface OutcomeMarket {
     // Contracts traded in the last 24h, each settles to $1, thus, 
     // this is also total USDC traded across both sides. Null when unknown 
     volume24h: number | null 
+    price24hAgo: number | null
+    change24h: number | null
     // Null when there is no evidence either way
     book: BookSummary | null
     // "binary": a side's price is a market-implied probability

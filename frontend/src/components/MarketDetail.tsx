@@ -5,7 +5,14 @@ import type {
 import { venueLabel } from '../features/markets/discovery'
 import { formatPrice, formatTime, formatVolume } from '../utils/format'
 import BookQualityNote from './BookQualityNote'
-import { formatProbability, impliedProbability, isPriceUnreliable } from '../features/markets/pricing'
+import { 
+  formatProbability, 
+  impliedProbability,
+  isPriceUnreliable,
+  pricesAreProbabilities,
+  visibleChange,
+ } from '../features/markets/pricing'
+ import ChangeBadge from './ChangeBadge'
 import OrderBookPanel from './OrderBookPanel'
 import PriceChart from './PriceChart'
 import TimeValue from './TimeValue'
@@ -41,6 +48,35 @@ function ImpliedProbabilityNote({ market }: { market: OutcomeMarket }) {
         What traders are currently paying, not a forecast.
       </span>
     </p>
+  )
+}
+
+// "+5.4 pts" with where it came from: "16.2% → 21.6%" (Milestone 20.2).
+// Cents instead of percent when the prices are not probabilities, and a
+// dash with a reason when there is no usable change.
+function ChangeTile({ market }: { market: OutcomeMarket }) {
+  const change = visibleChange(market)
+  const current = market.sides[0]?.price ?? null
+  if (change === null || current === null || market.price24hAgo === null) {
+    return (
+      <>
+        —
+        <span className="time-local">
+          {market.price24hAgo === null
+            ? 'No price history yet'
+            : 'Current price is unreliable'}
+        </span>
+      </>
+    )
+  }
+  const show = pricesAreProbabilities(market) ? formatProbability : formatPrice
+  return (
+    <>
+      <ChangeBadge change={change} />
+      <span className="time-local">
+        {show(market.price24hAgo)} → {show(current)}
+      </span>
+    </>
   )
 }
 
@@ -112,6 +148,13 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
             {market.volume24h === null
               ? '—'
               : `${market.volume24h.toLocaleString()} contracts (${formatVolume(market.volume24h)})`}
+          </dd>
+        </div>
+
+        <div>
+          <dt>24h change</dt>
+          <dd>
+            <ChangeTile market={market} />
           </dd>
         </div>
 

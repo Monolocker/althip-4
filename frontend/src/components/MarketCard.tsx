@@ -1,7 +1,8 @@
 import type { OutcomeMarket } from '../types/market'
 import { formatPrice, formatVolume } from '../utils/format'
 import BookQualityNote from './BookQualityNote'
-import { isPriceUnreliable } from '../features/markets/pricing'
+import { isPriceUnreliable, visibleChange } from '../features/markets/pricing'
+import ChangeBadge from './ChangeBadge'
 
 interface MarketCardProps {
   market: OutcomeMarket
@@ -17,6 +18,7 @@ function MarketCard({
   // Milestone 18.3: an unreliable book makes both sides' prices
   // meaningless (the two sides share one merged book).
   const unreliable = isPriceUnreliable(market)
+  const change = visibleChange(market)
 
   return (
     <article
@@ -56,6 +58,12 @@ function MarketCard({
 
       <p className="market-card-volume">
         24h vol {formatVolume(market.volume24h)}
+        {change !== null && (
+          <>
+            {' . '}
+            <ChangeBadge change={change} /> 24h
+          </>
+        )}
       </p>
 
       <button

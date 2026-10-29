@@ -36,3 +36,33 @@ export function isPriceUnreliable(market: OutcomeMarket): boolean {
 export function formatProbability(probability: number): string {
   return `${(probability * 100).toFixed(1)}%`
 }
+
+
+// --- 24h movers (Milestone 20.2) ------------------------------------
+
+// A market's 24h move counts only when both the move and the market are
+// trustworthy: a usable book (so the current price means something) and
+// real trading behind it. Decided in 20.2: a lone 43-contract trade in a
+// dead market must not top the movers list.
+export const MOVER_MIN_VOLUME = 1_000
+
+export function isMoverEligible(market: OutcomeMarket): boolean {
+  return (
+    market.change24h !== null &&
+    !isPriceUnreliable(market) &&
+    (market.volume24h ?? 0) >= MOVER_MIN_VOLUME
+  )
+}
+
+// The 24h change is shown wherever the current price is usable; the
+// volume threshold only governs RANKING, not display.
+export function visibleChange(market: OutcomeMarket): number | null {
+  return isPriceUnreliable(market) ? null : market.change24h
+}
+
+// 0.054 -> "+5.4 pts", -0.032 -> "−3.2 pts" (a real minus sign).
+export function formatChange(change: number): string {
+  const points = change * 100
+  const sign = points > 0 ? '+' : points < 0 ? '−' : ''
+  return `${sign}${Math.abs(points).toFixed(1)} pts`
+}

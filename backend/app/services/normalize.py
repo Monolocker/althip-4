@@ -433,6 +433,16 @@ def book_summary(coin: str, data: MarketData) -> BookSummary | None:
         return BookSummary(quality="unreliable", source="mark")
     return None
 
+def _parse_prev_day_price(ctx: dict[str, Any] | None) -> float | None:
+    """Read prevDayPx defensively. 0.0 means "no history", not a price."""
+    if ctx is None:
+        return None
+    try:
+        price = float(ctx["prevDayPx"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return price if price > 0 else None
+
 
 def clean_label(label: str) -> str:
     """'template:Yes' -> 'Yes'"""
@@ -518,7 +528,18 @@ def normalize_outcome(
             )
         )
     yes_coin = f"#{10 * outcome_id}"
-    volume_24h = _parse_volume(data.ctxs.get(yes_coin))
+    yes_ctx = data.ctxs.get(yes_coin)
+    volume_24h = _parse_volume(yes_ctx)
+
+    # 24h change: side 0 only, since prev0 + prev1 = 1 exactly
+    # Unknown on either end means unknown overall
+    price_24h_ago = _parse_prev_day_price(yes_ctx)
+    current_price = sides[0].price if sides else None
+    change_24h = (
+        round(current_price - price_24h_ago, 6)
+        if current_price is not None and price_24h_ago is not None
+        else None
+    )
 
     return OutcomeMarket(
         id=str(outcome_id),
@@ -532,6 +553,8 @@ def normalize_outcome(
         venue=raw.get("venue", ""),
         sides=sides,
         volume_24h=volume_24h,
+        price_24h_ago=price_24h_ago,
+        change_24h=change_24h,
         book=book_summary(yes_coin, data),
         payout=payout_kind(name),
         parent=question_ref(
