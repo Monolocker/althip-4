@@ -19,6 +19,20 @@ export interface BookSummary {
     checkedAt: string | null
 }
 
+// One spec field where two same-titled markets disagree
+export interface SpecDifference {
+    key: string // e.g. "listingDeadline"
+    thisValue: string
+    otherValue: string
+}
+
+// Another live market with the same title but different rules
+export interface Lookalike {
+    marketId: string
+    venue: string
+    differences: SpecDifference[]
+}
+
 // Compact link from an outcome to its multi-outcome question (18.6a).
 export interface QuestionRef {
     id: string
@@ -59,6 +73,7 @@ export interface OutcomeMarket {
     // Hyperliquid's category for the market's template, e.g. "sports"
     // Null when no template says
     category: string | null
+    lookalikes: Lookalike[]
 }
 
 export interface QuestionMembership {

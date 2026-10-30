@@ -1,5 +1,7 @@
 import type { OutcomeMarket } from '../types/market'
-import { formatPrice, formatVolume } from '../utils/format'
+import { formatPrice, formatTime, formatVolume } from '../utils/format'
+import { venueLabel } from '../features/markets/discovery'
+import { lookalikeSummary } from '../features/markets/lookalikes'
 import BookQualityNote from './BookQualityNote'
 import { isPriceUnreliable, visibleChange } from '../features/markets/pricing'
 import ChangeBadge from './ChangeBadge'
@@ -19,6 +21,7 @@ function MarketCard({
   // meaningless (the two sides share one merged book).
   const unreliable = isPriceUnreliable(market)
   const change = visibleChange(market)
+  const time = formatTime(market.eventAt ?? market.resolvesBy)
 
   return (
     <article
@@ -34,6 +37,14 @@ function MarketCard({
         </span>
 
         <h3>{market.question}</h3>
+        <p className="question-card-meta">
+          {time?.utc ?? 'No date'} · {venueLabel(market.venue)}
+        </p>
+        {market.lookalikes.length > 0 && (
+          <p className="lookalike-warning">
+            ⚠ {lookalikeSummary(market.lookalikes)}
+          </p>
+        )}
       </div>
 
       <div

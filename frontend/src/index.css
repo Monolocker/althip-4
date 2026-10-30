@@ -1012,3 +1012,44 @@ button {
 .question-row-value .change-badge {
   font-size: 0.75rem;
 }
+
+
+/* Milestone 20.3: lookalike warnings */
+
+.lookalike-warning {
+  margin: 0.25rem 0 0.5rem;
+  color: #8a6d00;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.lookalike-list {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lookalike {
+  padding: 0.75rem 1rem;
+  border: 1px solid #e6d9a6;
+  border-radius: 8px;
+  background: #fffbea;
+}
+
+.lookalike-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.lookalike-difference {
+  margin: 0.4rem 0 0;
+}
+
+.lookalike-key {
+  text-transform: capitalize;
+  color: #555;
+}

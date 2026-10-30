@@ -14,6 +14,7 @@ import {
  } from '../features/markets/pricing'
  import ChangeBadge from './ChangeBadge'
 import OrderBookPanel from './OrderBookPanel'
+import LookalikesSection from './LookalikesSection'
 import PriceChart from './PriceChart'
 import TimeValue from './TimeValue'
 
@@ -84,9 +85,16 @@ interface MarketDetailProps {
   market: OutcomeMarket
   detail: OutcomeMarketDetail | null
   detailError: string | null
+  // Opens another market form inside the panel
+  onSelectMarket: (marketId: string) => void
 }
 
-function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
+function MarketDetail({
+  market, 
+  detail, 
+  detailError,
+  onSelectMarket,
+}: MarketDetailProps) {
   const settlement = detail?.settlement ?? null
   const winningSide =
     settlement !== null && settlement.winningSideIndex !== null
@@ -207,6 +215,11 @@ function MarketDetail({ market, detail, detailError }: MarketDetailProps) {
           </p>
         )}
       </section>
+
+      <LookalikesSection
+        lookalikes={market.lookalikes}
+        onSelectMarket={onSelectMarket}
+        />
 
       <PriceChart market={market} isSettled={isSettled} />
 

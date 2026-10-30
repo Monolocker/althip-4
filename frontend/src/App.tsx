@@ -250,6 +250,7 @@ function App() {
               market={selectedMarket}
               detail={detail}
               detailError={detailError}
+              onSelectMarket={handleSelectMarket}
             />
           ) : (
             <div className="market-detail-empty">
