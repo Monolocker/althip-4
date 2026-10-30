@@ -194,6 +194,11 @@ def _format_value(key: str, value: str, add_utc: bool) -> str:
     return value
 
 
+def display_spec_value(key: str, value: str) -> str:
+    """A spec value as people read it: timestamps as UTC dates, the rest as-is."""
+    return _format_value(key, value, add_utc=True)
+
+
 def render_template(text: str, values: dict[str, str]) -> str | None:
     """Fill every {placeholder} in `text` from `values`.
 

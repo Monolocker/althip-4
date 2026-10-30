@@ -18,7 +18,7 @@ from app.models.deployers import DeployerStats
 from app.models.book import OrderBook
 from app.models.candle import CandleRange, PriceHistory
 from app.models.market import OutcomeMarket, OutcomeMarketDetail
-from app.services.analytics import deployer_stats
+from app.services.analytics import deployer_stats, find_lookalikes
 from app.services.sweep import BookSweeper
 from app.services.hyperliquid import HyperliquidClient, HyperliquidError
 from app.services.normalize import (
@@ -95,7 +95,16 @@ class Snapshot:
             tops=dict(tops),
             as_of=time.time(),
         )
-        self.markets = normalize_markets(self.data)
+        markets = normalize_markets(self.data)
+        # Lookalikes compare markets w/ each other, so they can only be 
+        # computed once the whole list exists
+        lookalikes = find_lookalikes(markets, meta)
+        self.markets = [
+            market.model_copy(update={"lookalikes": lookalikes[market.id]})
+            if market.id in lookalikes
+            else market
+            for market in markets
+        ]
         self.raw_by_id = {
             str(raw.get("outcome")): raw for raw in meta.get("outcomes", [])
         }

@@ -10,7 +10,12 @@ from datetime import datetime
 from typing import Any
 
 from app.models.deployers import DeployerStats, QualityCounts
-from app.models.market import OutcomeMarket
+from app.models.market import Lookalike, OutcomeMarket, SpecDifference
+from app.services.normalize import (
+    display_spec_value,
+    parse_spec,
+    questions_by_outcome,
+)
 
 
 def _operator_count(deployer: dict[str, Any] | None) -> int:
@@ -92,3 +97,80 @@ def deployer_stats(
     # volume, then market count, then venue name.
     stats.sort(key=lambda s: (-s.volume_24h, -s.market_count, s.venue))
     return stats
+
+
+# ---------------------------------------------------------------
+# Lookalikes (Milestone 20.3)
+# ---------------------------------------------------------------
+
+
+def find_lookalikes(
+    markets: list[OutcomeMarket],
+    meta: dict[str, Any],
+) -> dict[str, list[Lookalike]]:
+    """For each market, the other live markets with its exact title but
+    different spec values, i.e. different resolution rules.
+
+    Found in the 20.3 probe: all three Anthropic IPO ladders (skew, out,
+    txyz) share titles like "Anthropic first-day market cap above $1500B?"
+    but have listing deadlines months apart. Markets with identical spec
+    (true duplicates) are not lookalikes: their rules are identical.
+    """
+    questions = questions_by_outcome(meta)
+
+    def spec_values(market: OutcomeMarket) -> dict[str, str]:
+        # Same merge as rendering: question spec, overridden by own spec.
+        question = questions.get(int(market.id))
+        question_spec = (
+            parse_spec(question.get("description", "")) if question else {}
+        )
+        return {**question_spec, **parse_spec(market.description)}
+
+    by_title: dict[str, list[OutcomeMarket]] = defaultdict(list)
+    for market in markets:
+        by_title[market.question].append(market)
+
+    result: dict[str, list[Lookalike]] = {}
+    for group in by_title.values():
+        if len(group) < 2:
+            continue
+        specs = {market.id: spec_values(market) for market in group}
+        for market in group:
+            mine = specs[market.id]
+            refs: list[Lookalike] = []
+            for other in group:
+                if other.id == market.id:
+                    continue
+                theirs = specs[other.id]
+                differing = sorted(
+                    key
+                    for key in set(mine) | set(theirs)
+                    if mine.get(key) != theirs.get(key)
+                )
+                if not differing:
+                    continue  # identical rules: a duplicate, not a lookalike
+                refs.append(
+                    Lookalike(
+                        market_id=other.id,
+                        venue=other.venue,
+                        differences=[
+                            SpecDifference(
+                                key=key,
+                                this_value=(
+                                    display_spec_value(key, mine[key])
+                                    if key in mine
+                                    else "—"
+                                ),
+                                other_value=(
+                                    display_spec_value(key, theirs[key])
+                                    if key in theirs
+                                    else "—"
+                                ),
+                            )
+                            for key in differing
+                        ],
+                    )
+                )
+            if refs:
+                result[market.id] = refs
+    return result

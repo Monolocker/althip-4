@@ -59,6 +59,32 @@ class QuestionRef(BaseModel):
     # "Fallback". The full title of the market stays in `question`.
     outcome_label: str = Field(alias="outcomeLabel")
 
+
+class SpecDifference(BaseModel):
+    """One spec field where two same-titled markets disagree (20.3)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    key: str  # spec key, e.g. "listingDeadline"
+    this_value: str = Field(alias="thisValue")  # display-formatted
+    other_value: str = Field(alias="otherValue")  # display-formatted
+
+
+class Lookalike(BaseModel):
+    """Another live market with the SAME title but DIFFERENT rules (20.3).
+
+    Same template + same spec = identical rules; same title alone does
+    not imply that, because a template's title need not mention every
+    spec field (e.g. an IPO market's title omits its listing deadline).
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    market_id: str = Field(alias="marketId")
+    venue: str
+    differences: list[SpecDifference]
+
+
 class OutcomeMarket(BaseModel):
     """A single outcome market, normalized for our application."""
 
@@ -100,6 +126,9 @@ class OutcomeMarket(BaseModel):
     # HL's own category for the market's template
     # e.g. "sports", "price", "culture". None when no template
     category: str | None = None
+    # Same-titled markets whose rules differ. Filled in by the snapshot
+    # after normalization; empty when there are none.
+    lookalikes: list[Lookalike] = Field(default_factory=list)
 
 
 class QuestionMembership(BaseModel):
