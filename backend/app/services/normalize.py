@@ -226,17 +226,78 @@ def _lookup_template(
     return templates.get(tid) if tid is not None else None
 
 
+# ---------------------------------------------------------------
+# Hyperliquid's own price-range questions (Milestone 20.4)
+# ---------------------------------------------------------------
+# These have no validator template, so 18.1's renderer had nothing to
+# show but "Question 554" and "index:1". Their spec is structured, e.g.
+#   class:priceBucket|underlying:BTC|expiry:20261031-0600|
+#   priceThresholds:76950,80091|period:1d
+# and each named outcome is "index:N". Reading of the index, from the
+# 20.4 probe: N counts the ranges in ascending price order. The BTC mid
+# (77,427.5) sat inside index:1's range (76,950-80,091), which was the
+# most expensive outcome (83%), and Hyperliquid's own UI titles it "BTC
+# price range". Whether a boundary belongs to the lower or upper range
+# is not documented, so the labels never claim it.
+PRICE_BUCKET_CLASS = "priceBucket"
+
+
+def _format_threshold(raw: str) -> str:
+    """'76950' -> '76,950'; anything unparseable is shown as given."""
+    try:
+        value = float(raw)
+    except ValueError:
+        return raw
+    return f"{value:,.0f}" if value.is_integer() else f"{value:,}"
+
+
+def price_bucket_title(question_spec: dict[str, str]) -> str | None:
+    """'BTC price range at Oct 31, 2026 06:00 UTC', or None if not a bucket question."""
+    if question_spec.get("class") != PRICE_BUCKET_CLASS:
+        return None
+    underlying = question_spec.get("underlying")
+    expiry = parse_hl_timestamp(question_spec.get("expiry", ""))
+    if underlying is None or expiry is None:
+        return None
+    return f"{underlying} price range at {_fmt_time(expiry)}"
+
+
+def price_bucket_label(values: dict[str, str]) -> str | None:
+    """'Below 76,950' / '76,950 – 80,091' / 'Above 80,091' for index:0/1/2."""
+    if values.get("class") != PRICE_BUCKET_CLASS:
+        return None
+    thresholds = [
+        _format_threshold(t.strip())
+        for t in values.get("priceThresholds", "").split(",")
+        if t.strip()
+    ]
+    try:
+        index = int(values.get("index", ""))
+    except ValueError:
+        return None
+    if not thresholds or not 0 <= index <= len(thresholds):
+        return None
+    if index == 0:
+        return f"Below {thresholds[0]}"
+    if index == len(thresholds):
+        return f"Above {thresholds[-1]}"
+    return f"{thresholds[index - 1]} – {thresholds[index]}"
+
+
 def _question_title(
     question: dict[str, Any] | None,
     question_spec: dict[str, str],
     templates: dict[str, dict[str, Any]],
 ) -> str | None:
-    """Rendered title of a parent question, e.g. 'NBA Week 1: Spurs v Suns'."""
+    """Rendered title of a parent question, e.g. 'NBA Week 1: Spurs v Suns'.
+
+    Template-less questions fall back to the price-bucket title (20.4).
+    """
     if question is None:
         return None
     template = _lookup_template(question.get("name", ""), templates)
     if template is None:
-        return None
+        return price_bucket_title(question_spec)
     return render_template(template.get("name", ""), question_spec)
 
 
@@ -260,6 +321,12 @@ def template_question(
 
     template = _lookup_template(name, templates)
     if template is None:
+        # HL's price-range member: "76,950 - 80,091 - BTC price 
+        # range at ..." Anything else w/o a template: None
+        bucket = price_bucket_label(values)
+        parent = _question_title(question, question_spec, templates)
+        if bucket is not None and parent is not None:
+            return f"{bucket} - {parent}"
         return None
     own = render_template(template.get("name", ""), values)
     if own is None:
@@ -297,8 +364,13 @@ def question_ref(
         )
         # Non-template members (Hyperliquid's "Recurring Named Outcome")
         # keep their raw text: honest, if not pretty.
-        label = own or raw.get("description", "") or raw.get("name", "")
-
+        label = (
+            own
+            or price_bucket_label(values)
+            or raw.get("description", "")
+            or raw.get("name", "")
+        )
+        
     return QuestionRef(
         id=str(question.get("question")),
         title=_question_title(question, question_spec, templates),
