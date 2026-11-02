@@ -738,6 +738,18 @@ def normalize_market_detail(
     question = questions_by_outcome(data.meta).get(int(raw["outcome"]))
     return _build_detail(normalize_outcome(raw, data, question), data)
 
+def parse_settle_fraction(settled: dict[str, Any]) -> float | None:
+    """settledOutcome's settleFraction as a number: the payout per unit to
+    side 0 (1.0 = side 0 won, 0.0 = side 1 won). None if missing/malformed.
+
+    Shared by the settled detail view (Milestone 13) and the history
+    recorder (Milestone 21), so both read a settlement the same way.
+    """
+    try:
+        return float(settled.get("settleFraction"))
+    except (TypeError, ValueError):
+        return None
+
 def normalize_settled_detail(
     settled: dict[str, Any], data: MarketData
 ) -> OutcomeMarketDetail:
@@ -757,10 +769,7 @@ def normalize_settled_detail(
     base = normalize_outcome(settled["spec"], settled_data, question)
     base = base.model_copy(update={"status": "settled"})
 
-    try:
-        fraction: float | None = float(settled.get("settleFraction"))
-    except (TypeError, ValueError):
-        fraction = None
+    fraction = parse_settle_fraction(settled)
 
     winner: int | None = None
     if fraction == 1.0:

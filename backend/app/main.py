@@ -139,7 +139,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     
     app.state.history_store = HistoryStore()
     await asyncio.to_thread(app.state.history_store.initialize)
-    app.state.recorder = HistoryRecorder(app.state.history_store, live_markets)
+    app.state.recorder = HistoryRecorder(
+        app.state.history_store, 
+        live_markets,
+        app.state.hyperliquid.fetch_settled_outcome,
+        )
     record_task = asyncio.create_task(app.state.recorder.run_forever())
 
     yield
@@ -256,6 +260,8 @@ class HistoryStatus(BaseModel):
     last_recorded_at: datetime | None = Field(alias="lastRecordedAt")
     last_batch: int = Field(alias="lastBatch")
     slots_recorded: int = Field(alias="slotsRecorded")
+    settlements_recorded: int = Field(alias="settlementsRecorded")
+    pending_settlements: int = Field(alias="pendingSettlements")
     file_bytes: int = Field(alias="fileBytes")
 
 class HealthResponse(BaseModel):
@@ -293,6 +299,8 @@ async def health() -> HealthResponse:
             ),
             last_batch=recorder.last_batch,
             slots_recorded=recorder.slots_recorded,
+            settlements_recorded = recorder.settlements_recorded,
+            pending_settlements=recorder.pending_settlements,
             file_bytes=store.file_size(),
         ),
     )
