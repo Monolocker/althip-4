@@ -152,7 +152,7 @@ TIMESTAMP_KEYS = frozenset((*EVENT_TIME_KEYS, *DEADLINE_KEYS))
 
 # Outcomes the protocol creates for each question ("other"); they have
 # no template of their own.
-FALLBACK_OUTCOME_NAME = "template fallback"
+FALLBACK_OUTCOME_NAMES = frozenset({"template fallback", "Recurring Fallback"})
 
 # Template descriptions end with machine-readable metadata, e.g.
 # "metadata=category:sports|subCategory:Basketball|semanticRestriction:..."
@@ -313,7 +313,7 @@ def template_question(
     A question member's own title is only part of the story ("Draw"), so
     it is joined with its parent question's title.
     """
-    if name == FALLBACK_OUTCOME_NAME:
+    if name in FALLBACK_OUTCOME_NAMES:
         parent = _question_title(question, question_spec, templates)
         # Labeled "Fallback", not "Other": some questions also have a named
         # outcome called "Other" (awardOther), and the two must not look alike.
@@ -370,7 +370,7 @@ def question_ref(
             or raw.get("description", "")
             or raw.get("name", "")
         )
-        
+
     return QuestionRef(
         id=str(question.get("question")),
         title=_question_title(question, question_spec, templates),
