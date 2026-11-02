@@ -1,3 +1,5 @@
 .venv/
 __pycache__/
 *.pyc
+# History database (Milestone 21): data, not code
+data/

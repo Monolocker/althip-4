@@ -19,6 +19,7 @@ from app.models.book import OrderBook
 from app.models.candle import CandleRange, PriceHistory
 from app.models.market import OutcomeMarket, OutcomeMarketDetail
 from app.services.analytics import deployer_stats, find_lookalikes
+from app.services.history import HistoryRecorder, HistoryStore
 from app.services.sweep import BookSweeper
 from app.services.hyperliquid import HyperliquidClient, HyperliquidError
 from app.services.normalize import (
@@ -135,15 +136,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.sweeper = BookSweeper(app.state.hyperliquid, side0_coins)
     sweep_task = asyncio.create_task(app.state.sweeper.run_forever())
 
+    
+    app.state.history_store = HistoryStore()
+    await asyncio.to_thread(app.state.history_store.initialize)
+    app.state.recorder = HistoryRecorder(app.state.history_store, live_markets)
+    record_task = asyncio.create_task(app.state.recorder.run_forever())
+
     yield
 
-    # Shutdown order matters: stop the sweep BEFORE closing the HTTP
-    # client it uses, then wait for the cancellation to finish.
-    sweep_task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await sweep_task
+    # Shutdown order matters: stop the background tasks before closing the HTTP
+    # client they use, then wait for the cancellations.
+    for task in (record_task, sweep_task):
+        task.cancel()
+    for task in (record_task, sweep_task):
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
     await app.state.http.aclose()
-
 
 app = FastAPI(title="Hyperliquid Outcomes API", lifespan=lifespan)
 
@@ -192,6 +200,12 @@ async def side0_coins() -> list[str]:
     return [m.sides[0].coin for m in snapshot.markets if m.sides]
 
 
+async def live_markets() -> list[OutcomeMarket]:
+    """What the history recorder samples: every market in the snapshot."""
+    snapshot = await get_snapshot()
+    return snapshot.markets
+
+
 async def get_snapshot() -> Snapshot:
     """Return a fresh snapshot, refetching when the cache has expired."""
     current: Snapshot | None = app.state.snapshot
@@ -234,12 +248,22 @@ class SweepStatus(BaseModel):
     last_completed_at: datetime | None = Field(alias="lastCompletedAt")
     last_failures: int = Field(alias="lastFailures")
 
+class HistoryStatus(BaseModel):
+    """Whether the history recorder is alive and how much it has stored"""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    last_recorded_at: datetime | None = Field(alias="lastRecordedAt")
+    last_batch: int = Field(alias="lastBatch")
+    slots_recorded: int = Field(alias="slotsRecorded")
+    file_bytes: int = Field(alias="fileBytes")
 
 class HealthResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     status: str
     book_sweep: SweepStatus = Field(alias="bookSweep")
+    history: HistoryStatus
 
 
 @app.get("/health", response_model_by_alias=True)
@@ -247,6 +271,8 @@ async def health() -> HealthResponse:
     # A background task can die silently; exposing its progress here turns
     # "is it still running?" into something you can check with curl.
     sweeper: BookSweeper = app.state.sweeper
+    recorder: HistoryRecorder = app.state.recorder
+    store: HistoryStore = app.state.history_store
     completed = sweeper.last_completed_at
     return HealthResponse(
         status="ok",
@@ -258,6 +284,16 @@ async def health() -> HealthResponse:
                 else None
             ),
             last_failures=sweeper.last_failures,
+        ),
+         history=HistoryStatus(
+            last_recorded_at=(
+                datetime.fromtimestamp(recorder.last_recorded_at, tz=timezone.utc)
+                if recorder.last_recorded_at is not None
+                else None
+            ),
+            last_batch=recorder.last_batch,
+            slots_recorded=recorder.slots_recorded,
+            file_bytes=store.file_size(),
         ),
     )
 
