@@ -7,8 +7,8 @@ import type { Candle } from '../../types/candle'
 export interface ChartPoint {
   time: number // ms since epoch, start of the candle
   value: number // close price, 0..1
-  trades: number
-  volume: number // contracts traded in the interval
+  trades: number | null // null = unknown (recorded history)
+  volume: number | null // contracts traded in the interval; null = unknown
 }
 
 // Hyperliquid interval -> its length, used to recognise missing candles.

@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.models.candle import Candle
 from app.models.market import OutcomeMarket
 from app.services.normalize import parse_settle_fraction
 
@@ -124,6 +125,26 @@ WHERE id NOT IN (SELECT market_id FROM settlements)
 ORDER BY last_seen DESC
 """
 
+# A settled market's usable recorded prices (Milestone 21.3), over the
+# last `span` seconds of its recorded life. Only tight/wide books count:
+# an unreliable book's mid is a placeholder (18.3), and NULL quality
+# means the sweep had not checked the book yet. The (market_id,
+# observed_at) primary key makes this one contiguous range read.
+RECORDED_PRICES = """
+SELECT observed_at, price FROM observations
+WHERE market_id = :market_id
+  AND price IS NOT NULL
+  AND quality IN ('tight', 'wide')
+  AND observed_at >= (
+      SELECT MAX(observed_at) FROM observations
+      WHERE market_id = :market_id
+        AND price IS NOT NULL
+        AND quality IN ('tight', 'wide')
+  ) - :span
+ORDER BY observed_at
+"""
+
+
 INSERT_OBSERVATION = """
 INSERT OR IGNORE INTO observations (
     market_id, observed_at, price, bid, ask, quality, volume_24h
@@ -133,6 +154,42 @@ INSERT OR IGNORE INTO observations (
 
 def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
+
+def bucket_prices(rows: list[tuple[int, float]], bucket_seconds: int) -> list[Candle]:
+    """Turn 5-minute samples into candles of `bucket_seconds` (21.3).
+
+    Sampling again, as in 19.1: a chart range gets a fixed interval, and
+    every sample inside one interval folds into one candle: the first
+    sample is its open, the last its close, the extremes its high/low.
+    Volume and trades are unknown (None), never invented as 0.
+    `rows` must be sorted by time, as RECORDED_PRICES returns them.
+    """
+    candles: list[Candle] = []
+    current_start: int | None = None
+    prices: list[float] = []
+
+    def flush() -> None:
+        if current_start is not None and prices:
+            candles.append(
+                Candle(
+                    time=datetime.fromtimestamp(current_start, tz=timezone.utc),
+                    open=prices[0],
+                    high=max(prices),
+                    low=min(prices),
+                    close=prices[-1],
+                    volume=None,
+                    trades=None,
+                )
+            )
+
+    for observed_at, price in rows:
+        start = observed_at - observed_at % bucket_seconds
+        if start != current_start:
+            flush()
+            current_start, prices = start, []
+        prices.append(price)
+    flush()
+    return candles
 
 
 class HistoryStore:
@@ -225,6 +282,16 @@ class HistoryStore:
                 INSERT_SETTLEMENT,
                 (market_id, settle_fraction, details, detected_at.isoformat()),
             )
+
+    def recorded_prices(
+        self, market_id: str, span_seconds: int
+    ) -> list[tuple[int, float]]:
+        """(observed_at, price) pairs from the last `span_seconds` of a
+        market's usable recordings, oldest first. Empty if none."""
+        with closing(self._connect()) as connection:
+            return connection.execute(
+                RECORDED_PRICES, {"market_id": market_id, "span": span_seconds}
+            ).fetchall()
 
     def file_size(self) -> int:
         """Bytes on disk: the database plus its write-ahead log.

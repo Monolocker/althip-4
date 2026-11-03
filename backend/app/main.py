@@ -19,7 +19,7 @@ from app.models.book import OrderBook
 from app.models.candle import CandleRange, PriceHistory
 from app.models.market import OutcomeMarket, OutcomeMarketDetail
 from app.services.analytics import deployer_stats, find_lookalikes
-from app.services.history import HistoryRecorder, HistoryStore
+from app.services.history import HistoryRecorder, HistoryStore, bucket_prices
 from app.services.sweep import BookSweeper
 from app.services.hyperliquid import HyperliquidClient, HyperliquidError
 from app.services.normalize import (
@@ -387,20 +387,19 @@ async def market_candles(
     # builtin, so the function argument gets a different name + alias.
     chart_range: CandleRange = Query(default="1w", alias="range"),
 ) -> PriceHistory:
-    snapshot = await get_snapshot()
-    if market_id not in snapshot.raw_by_id:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                f"Price history for market {market_id} is unavailable: "
-                "Hyperliquid removes candles when a market settles"
-            ),
-        )
+    if not market_id.isdigit():
+        raise HTTPException(status_code=404, detail=f"Unknown market {market_id}")
 
     preset = RANGE_PRESETS[chart_range]
     # Side 0 only: the books are merged, so side 1's history is exactly
     # 1 - side 0's (verified in the Milestone 19 probe).
     coin = f"#{10 * int(market_id)}"
+
+    snapshot = await get_snapshot()
+    if market_id not in snapshot.raw_by_id:
+        # Not live: Hyperliquid has deleted its candles (19), so fall
+        # back to what this app recorded while it was live (21.3).
+        return await recorded_history(market_id, coin, chart_range, preset)
 
     cache: dict[tuple[str, str], tuple[float, PriceHistory]] = app.state.candles
     cached = cache.get((coin, chart_range))
@@ -427,6 +426,43 @@ async def market_candles(
     )
     cache[(coin, chart_range)] = (now, history)
     return history
+
+
+# Candle interval -> its length, for bucketing our 5-minute recordings.
+INTERVAL_SECONDS = {"15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}
+
+
+async def recorded_history(
+    market_id: str, coin: str, chart_range: CandleRange, preset: RangePreset
+) -> PriceHistory:
+    """Chart data for a market that is no longer live (Milestone 21.3).
+
+    The range is measured back from the market's LAST usable recording,
+    not from now: "1D" of a market that settled last week is its final
+    day, which is the day worth seeing.
+    """
+    store: HistoryStore = app.state.history_store
+    rows = await asyncio.to_thread(
+        store.recorded_prices, market_id, preset.span_ms // 1000
+    )
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Price history for market {market_id} is unavailable: "
+                "Hyperliquid removes candles when a market settles, and "
+                "this app has no usable recording of it"
+            ),
+        )
+    return PriceHistory(
+        market_id=market_id,
+        coin=coin,
+        range=chart_range,
+        interval=preset.interval,
+        candles=bucket_prices(rows, INTERVAL_SECONDS[preset.interval]),
+        fetched_at=datetime.now(timezone.utc),
+        source="recorded",
+    )
 
 
 @app.get("/deployers")

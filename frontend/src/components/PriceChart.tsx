@@ -60,7 +60,14 @@ function ChartSvg({ history, formatValue }: ChartSvgProps) {
   const yDomain = valueDomain(points)
   const y = linearScale(yDomain, [PRICE_AREA.bottom, PRICE_AREA.top])
 
-  const maxVolume = Math.max(...points.map((point) => point.volume))
+  // Recorded history (21.3) has no per-interval volume: then there is no
+  // volume strip at all, rather than an empty one that would suggest
+  // "nobody traded".
+  const volumes = points
+    .map((point) => point.volume)
+    .filter((volume): volume is number => volume !== null)
+  const hasVolume = volumes.length > 0
+  const maxVolume = hasVolume ? Math.max(...volumes) : 0
   const volumeY = linearScale(
     [0, maxVolume],
     [VOLUME_AREA.bottom, VOLUME_AREA.top],
@@ -139,15 +146,17 @@ function ChartSvg({ history, formatValue }: ChartSvgProps) {
         {/* Volume strip: one bar per candle that had trading volume. An
             interval with no volume has no bar, which is what makes "the
             line was flat because nobody traded" visible. */}
-        <line
-          className="price-chart-grid"
-          x1={PAD.left}
-          x2={WIDTH - PAD.right}
-          y1={VOLUME_AREA.bottom}
-          y2={VOLUME_AREA.bottom}
-        />
+        {hasVolume && (
+          <line
+            className="price-chart-grid"
+            x1={PAD.left}
+            x2={WIDTH - PAD.right}
+            y1={VOLUME_AREA.bottom}
+            y2={VOLUME_AREA.bottom}
+          />
+        )}
         {points.map((point, index) =>
-          point.volume > 0 ? (
+          point.volume !== null && point.volume > 0 ? (
             <rect
               key={point.time}
               className={
@@ -207,33 +216,47 @@ function ChartSvg({ history, formatValue }: ChartSvgProps) {
       <p className="price-chart-readout">
         {hovered !== null ? '' : 'Latest: '}
         <strong>{formatValue(shown.value)}</strong> ·{' '}
-        {formatChartTime(shown.time, history.interval)} · {shown.trades}{' '}
-        {shown.trades === 1 ? 'trade' : 'trades'} · vol{' '}
-        {formatVolume(shown.volume)}
+        {formatChartTime(shown.time, history.interval)}
+        {shown.trades !== null && (
+          <>
+            {' · '}
+            {shown.trades} {shown.trades === 1 ? 'trade' : 'trades'}
+          </>
+        )}
+        {shown.volume !== null && <> · vol {formatVolume(shown.volume)}</>}
       </p>
+      {history.source === 'recorded' && (
+        <p className="detail-note">
+          Recorded by this app every 5 minutes while the market was live:
+          mid prices from usable books, not trades. Gaps are times the app
+          was not running or the book was unusable. Hyperliquid deletes its
+          own history when a market settles.
+        </p>
+      )}
     </>
   )
 }
 
 // The honest message for a failed request: a 404 means the history no
-// longer exists, anything else is (probably) temporary.
+// longer exists anywhere, anything else is (probably) temporary.
 function errorMessage(error: Error): string {
   if (error instanceof ApiError && error.status === 404) {
-    return 'Price history is unavailable: this market has settled or is no longer listed.'
+    return 'Price history is unavailable: Hyperliquid deletes it when a market settles, and this app has no usable recording of this market.'
   }
   return `Could not load price history right now (${error.message}). It will retry automatically.`
 }
 
 interface PriceChartProps {
   market: OutcomeMarket
-  isSettled: boolean
 }
 
-// Price history of the market's first side, from Hyperliquid candles
-// (Milestone 19). The selected range survives switching markets.
-function PriceChart({ market, isSettled }: PriceChartProps) {
+// Price history of the market's first side: Hyperliquid candles while
+// it is live (19), this app's own recordings once it has settled (21.3).
+// The selected range survives switching markets.
+function PriceChart({ market }: PriceChartProps) {
   const [range, setRange] = useState<CandleRange>('1w')
-  const history = usePriceHistory(market.id, range, !isSettled)
+  // Always asked now: the backend decides where the history comes from.
+  const history = usePriceHistory(market.id, range, true)
 
   // Same rule as the "Market-implied probability" line (18.4): percent
   // only when this market's prices really are probabilities.
@@ -242,13 +265,7 @@ function PriceChart({ market, isSettled }: PriceChartProps) {
     : formatPrice
 
   let body
-  if (isSettled) {
-    body = (
-      <p className="detail-note">
-        Price history is unavailable for settled markets.
-      </p>
-    )
-  } else if (history.isPending) {
+  if (history.isPending) {
     body = <p className="detail-note">Loading price history…</p>
   } else if (history.isError) {
     body = (

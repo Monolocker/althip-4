@@ -221,7 +221,7 @@ function MarketDetail({
         onSelectMarket={onSelectMarket}
         />
 
-      <PriceChart market={market} isSettled={isSettled} />
+      <PriceChart market={market} />
 
       {detailError !== null && (
         <p className="detail-note detail-note--error">
