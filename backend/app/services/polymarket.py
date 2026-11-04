@@ -49,6 +49,27 @@ class PolymarketClient:
             raise PolymarketError(f"Unexpected market shape: {type(data).__name__}")
         return data
 
+    async def search_events(self, query: str) -> list[dict[str, Any]]:
+        """Gamma public search: matching events, markets nested inside.
+
+        Fuzzy and noisy (the 22 probe returned a 2024 Belgian election for
+        an FOMC query), so results are only ever suggestions, filtered by
+        the caller and confirmed by a person.
+        """
+        try:
+            response = await self._http.get(
+                f"{GAMMA_URL}/public-search",
+                params={"q": query},
+                timeout=REQUEST_TIMEOUT,
+            )
+        except httpx.HTTPError as exc:
+            raise PolymarketError(f"Polymarket request failed: {exc}") from exc
+        if response.status_code != 200:
+            raise PolymarketError(f"Polymarket returned HTTP {response.status_code}")
+        data = response.json()
+        events = data.get("events") if isinstance(data, dict) else None
+        return events if isinstance(events, list) else []
+    
 
 def _decode_list(value: Any) -> list[Any]:
     """'["Yes", "No"]' (a string) or ["Yes", "No"] (a list) -> a list."""

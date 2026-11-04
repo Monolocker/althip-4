@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, AsyncIterator
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -18,8 +18,20 @@ from app.models.deployers import DeployerStats
 from app.models.book import OrderBook
 from app.models.candle import CandleRange, PriceHistory
 from app.models.market import OutcomeMarket, OutcomeMarketDetail
+from app.models.venue import (
+    ElsewhereEntry,
+    LinkGroupCreate,
+    Suggestion,
+    Venue,
+    VenueLink,
+    VenueQuote
+)
 from app.services.analytics import deployer_stats, find_lookalikes
 from app.services.history import HistoryRecorder, HistoryStore, bucket_prices
+from app.services.kalshi import KalshiClient, KalshiError, kalshi_quote
+from app.services.links import DuplicateLinkError, LinkStore
+from app.services.polymarket import PolymarketClient, PolymarketError, polymarket_quote
+from app.services.suggestions import SuggestionFinder
 from app.services.sweep import BookSweeper
 from app.services.hyperliquid import HyperliquidClient, HyperliquidError
 from app.services.normalize import (
@@ -120,6 +132,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Create app-lifetime resources at startup; release them at shutdown."""
     app.state.http = httpx.AsyncClient()
     app.state.hyperliquid = HyperliquidClient(app.state.http)
+    # Other venues (M22), sharing the same connection pool
+    app.state.polymarket = PolymarketClient(app.state.http)
+    app.state.kalshi = KalshiClient(app.state.http)
+    app.state.suggestions = SuggestionFinder(app.state.polymarket, app.state.kalshi)
+    # (venue, external_id) -> (fetched_at_monotonic, VenueQuote | None)
+    app.state.venue_quotes = {}
     app.state.snapshot = None
     # (fetched_at_monotonic, {template id: template}) or None
     app.state.templates = None
@@ -139,6 +157,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     
     app.state.history_store = HistoryStore()
     await asyncio.to_thread(app.state.history_store.initialize)
+    app.state.link_store = LinkStore()
+    await asyncio.to_thread(app.state.link_store.initialize)
     app.state.recorder = HistoryRecorder(
         app.state.history_store, 
         live_markets,
@@ -476,3 +496,102 @@ async def deployers() -> list[DeployerStats]:
     return deployer_stats(
         snapshot.markets, snapshot.data.meta, datetime.now(timezone.utc)
     )
+
+
+
+# ---------------------------------------------------------------
+# Other venues: curated links and suggestions (Milestone 22.2)
+# ---------------------------------------------------------------
+# NOTE: POST /links and DELETE /links/{id} are the app's first WRITE
+# endpoints. They are unauthenticated because this app runs only on
+# localhost; they MUST be protected before it is ever deployed.
+
+# Decision 5: an external quote is reused for 30s, so an open panel
+# cannot hammer Polymarket or Kalshi.
+VENUE_QUOTE_TTL_SECONDS = 30.0
+
+
+async def venue_quote(venue: Venue, external_id: str) -> VenueQuote | None:
+    """A live quote for one linked market (cached), or None if gone."""
+    cache: dict[tuple[str, str], tuple[float, VenueQuote | None]] = app.state.venue_quotes
+    cached = cache.get((venue, external_id))
+    now = time.monotonic()
+    if cached is not None and now - cached[0] < VENUE_QUOTE_TTL_SECONDS:
+        return cached[1]
+    if venue == "polymarket":
+        client: PolymarketClient = app.state.polymarket
+        raw = await client.fetch_market(external_id)
+        quote = polymarket_quote(raw) if raw is not None else None
+    else:
+        kalshi: KalshiClient = app.state.kalshi
+        raw = await kalshi.fetch_market(external_id)
+        quote = kalshi_quote(raw) if raw is not None else None
+    cache[(venue, external_id)] = (now, quote)
+    return quote
+
+
+@app.get("/markets/{market_id}/links")
+async def market_links(market_id: str) -> list[VenueLink]:
+    store: LinkStore = app.state.link_store
+    return await asyncio.to_thread(store.links_for_market, market_id)
+
+
+@app.get("/markets/{market_id}/elsewhere")
+async def market_elsewhere(market_id: str) -> list[ElsewhereEntry]:
+    """Each confirmed link of this outcome with its live quote.
+
+    A venue failing affects only its own entry (error set, quote None):
+    one slow or broken venue never blanks the others.
+    """
+    store: LinkStore = app.state.link_store
+    links = await asyncio.to_thread(store.links_for_market, market_id)
+    entries = []
+    for link in links:
+        try:
+            quote = await venue_quote(link.venue, link.external_id)
+            error = None if quote is not None else "Market no longer listed on this venue"
+        except (PolymarketError, KalshiError) as exc:
+            quote, error = None, str(exc)
+        entries.append(ElsewhereEntry(link=link, quote=quote, error=error))
+    return entries
+
+
+@app.get("/questions/{question_id}/suggestions")
+async def question_suggestions(question_id: str) -> list[Suggestion]:
+    """Candidate matches on other venues for one football question.
+
+    Nothing is saved: a person compares the rules and confirms with
+    POST /links. Questions outside the scope (decision 3) return [].
+    """
+    snapshot = await get_snapshot()
+    members = [m for m in snapshot.markets if m.parent and m.parent.id == question_id]
+    if not members:
+        raise HTTPException(status_code=404, detail=f"Unknown live question {question_id}")
+    finder: SuggestionFinder = app.state.suggestions
+    return await finder.find(members)
+
+
+@app.post("/links", status_code=201)
+async def create_links(group: LinkGroupCreate) -> list[VenueLink]:
+    """Confirm a match: every outcome link of the group, all or nothing."""
+    if group.match_level == "comparable" and not group.note.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="A comparable link needs a note saying how the venues differ",
+        )
+    store: LinkStore = app.state.link_store
+    try:
+        return await asyncio.to_thread(store.create_group, group)
+    except DuplicateLinkError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"An outcome in this group is already linked to {group.venue} ({exc})",
+        ) from exc
+
+
+@app.delete("/links/{link_id}", status_code=204)
+async def delete_link(link_id: int) -> Response:
+    store: LinkStore = app.state.link_store
+    if not await asyncio.to_thread(store.delete, link_id):
+        raise HTTPException(status_code=404, detail=f"No link {link_id}")
+    return Response(status_code=204)

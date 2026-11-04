@@ -50,6 +50,66 @@ class KalshiClient:
         if not isinstance(market, dict):
             raise KalshiError("Unexpected market shape: no 'market' object")
         return market
+    
+
+    async def fetch_series(self) -> list[dict[str, Any]]:
+        """Every series (about 15,000): ticker, title, category, fees, ...
+
+        A large response, so callers should cache it (suggestions keep
+        it for a day).
+        """
+        data = await self._get_json(f"{KALSHI_URL}/series", timeout=60.0)
+        series = data.get("series") if isinstance(data, dict) else None
+        if not isinstance(series, list):
+            raise KalshiError("Unexpected series shape: no 'series' list")
+        return series
+
+    async def fetch_open_events(self, series_ticker: str) -> list[dict[str, Any]]:
+        """Open events of one series, each with its markets nested inside."""
+        data = await self._get_json(
+            f"{KALSHI_URL}/events",
+            params={
+                "series_ticker": series_ticker,
+                "status": "open",
+                "with_nested_markets": "true",
+                "limit": 200,
+            },
+        )
+        events = data.get("events") if isinstance(data, dict) else None
+        if not isinstance(events, list):
+            raise KalshiError("Unexpected events shape: no 'events' list")
+        return events
+
+    async def _get_json(
+        self,
+        url: str,
+        params: dict[str, Any] | None = None,
+        timeout: float | None = None,
+    ) -> Any:
+        try:
+            response = await self._http.get(
+                url,
+                params=params,
+                timeout=httpx.Timeout(timeout, connect=5.0) if timeout else REQUEST_TIMEOUT,
+            )
+        except httpx.HTTPError as exc:
+            raise KalshiError(f"Kalshi request failed: {exc}") from exc
+        if response.status_code != 200:
+            raise KalshiError(f"Kalshi returned HTTP {response.status_code}")
+        return response.json()
+
+
+def _side(price: Any, size: Any) -> float | None:
+    """A best price, or None when nothing rests there (22.2).
+
+    Evidence from the first 22 probe: an empty side was reported as
+    price "0.0000" WITH size "0.00". A price with zero size is no order,
+    so it becomes None, never a 0c bid. A missing size field is not
+    treated as empty: then the price is kept as given.
+    """
+    if _dollars(size) == 0:
+        return None
+    return _dollars(price)
 
 
 def _dollars(value: Any) -> float | None:
@@ -79,8 +139,8 @@ def kalshi_quote(raw: dict[str, Any]) -> VenueQuote:
         external_id=str(raw.get("ticker", "")),
         title=f"{title} ({subtitle})" if subtitle and subtitle not in title else title,
         side_label="Yes",
-        bid=_dollars(raw.get("yes_bid_dollars")),
-        ask=_dollars(raw.get("yes_ask_dollars")),
+        bid=_side(raw.get("yes_bid_dollars"), raw.get("yes_bid_size_fp")),
+        ask=_side(raw.get("yes_ask_dollars"), raw.get("yes_ask_size_fp")),
         price=_dollars(raw.get("last_price_dollars")),
         status=str(raw.get("status", "")),
         closes_at=_time(raw.get("close_time")),
