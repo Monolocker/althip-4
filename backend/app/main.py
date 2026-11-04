@@ -185,7 +185,7 @@ app.add_middleware(
         "http://localhost:5173",  # Vite frontend
         "http://127.0.0.1:5173",
     ],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 

@@ -5,7 +5,12 @@ import type {
   OutcomeMarket,
   OutcomeMarketDetail,
 } from '../types/market'
-import type { ElsewhereEntry } from '../types/venue'
+import type { 
+  ElsewhereEntry,
+  LinkGroupCreate,
+  Suggestion,
+  VenueLink,
+} from '../types/venue'
 
 const API_BASE_URL = 'http://127.0.0.1:8000'
 
@@ -38,6 +43,57 @@ async function requestJson<T>(
   }
 
   return (await response.json()) as T
+}
+
+// Writes (Milestone 22.3b): POST and DELETE with a JSON body. Errors
+// carry the backend's own explanation ("detail"), e.g. why a link was
+// refused, so the form can show it instead of a bare status code.
+async function sendJson<T>(
+  path: string,
+  label: string,
+  method: 'POST' | 'DELETE',
+  body?: unknown,
+): Promise<T | null> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method,
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+
+  if (!response.ok) {
+    let detail = response.statusText
+    try {
+      const data: unknown = await response.json()
+      if (typeof data === 'object' && data !== null && 'detail' in data) {
+        detail = String((data as { detail: unknown }).detail)
+      }
+    } catch {
+      // No JSON body: keep the status text.
+    }
+    throw new ApiError(`Could not ${label}: ${detail}`, response.status)
+  }
+
+  // 204 No Content has no body to parse.
+  return response.status === 204 ? null : ((await response.json()) as T)
+}
+
+export async function fetchSuggestions(
+  questionId: string,
+  signal?: AbortSignal,
+): Promise<Suggestion[]> {
+  return requestJson<Suggestion[]>(
+    `/questions/${encodeURIComponent(questionId)}/suggestions`,
+    `suggestions for question ${questionId}`,
+    signal,
+  )
+}
+
+export async function createLinks(group: LinkGroupCreate): Promise<VenueLink[]> {
+  return (await sendJson<VenueLink[]>('/links', 'confirm the links', 'POST', group)) ?? []
+}
+
+export async function deleteLink(linkId: number): Promise<void> {
+  await sendJson<null>(`/links/${linkId}`, 'remove the link', 'DELETE')
 }
 
 export async function fetchMarkets(

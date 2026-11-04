@@ -1,9 +1,17 @@
-import { skipToken, useQuery } from '@tanstack/react-query'
+import { 
+    skipToken,
+    useMutation,
+    useQuery,
+    useQueryClient, 
+} from '@tanstack/react-query'
 import type { CandleRange } from '../types/candle'
 import {
     ApiError,
     fetchDeployers,
+    createLinks,
+    deleteLink,
     fetchElsewhere,
+    fetchSuggestions,
     fetchMarketDetail,
     fetchMarkets,
     fetchPriceHistory,
@@ -22,6 +30,8 @@ export const marketKeys = {
     deployers: ['deployers'] as const,
     elsewhere: (marketId: string | null) => 
         ['markets', 'elsewhere', marketId] as const,
+    suggestions: (questionId: string | null) =>
+        ['markets', 'suggestions', questionId] as const,
 }
 
 // Backend snapshots refreshes every 15s, so data younger than 15s
@@ -104,5 +114,49 @@ export function useElsewhere(marketId: string | null) {
                 : ({ signal }) => fetchElsewhere(marketId, signal),
         staleTime: ELSEWHERE_MS,
         refetchInterval: ELSEWHERE_MS,
+    })
+}
+
+
+// Suggestions are searched on demand (22.3b): `enabled` stays false until
+// the person clicks "Find on other venues", because each search costs
+// requests to two other venues.
+export function useSuggestions(questionId: string | null, enabled: boolean) {
+    return useQuery({
+        queryKey: marketKeys.suggestions(questionId),
+        queryFn:
+            questionId === null || !enabled
+                ? skipToken
+                : ({ signal }) => fetchSuggestions(questionId, signal),
+        staleTime: 60_000,
+        // A failed search is shown with a "try again" button rather than
+        // retried silently three times.
+        retry: false,
+    })
+}
+
+// After a write, every "elsewhere" list may be out of date: one
+// confirmation links several outcomes at once. Invalidating by the key
+// PREFIX ['markets', 'elsewhere'] marks all of them stale, and the ones
+// on screen refetch immediately.
+function useInvalidateElsewhere() {
+    const queryClient = useQueryClient()
+    return () =>
+        queryClient.invalidateQueries({ queryKey: ['markets', 'elsewhere'] })
+}
+
+export function useCreateLinks() {
+    const invalidate = useInvalidateElsewhere()
+    return useMutation({
+        mutationFn: createLinks,
+        onSuccess: invalidate,
+    })
+}
+
+export function useDeleteLink() {
+    const invalidate = useInvalidateElsewhere()
+    return useMutation({
+        mutationFn: deleteLink,
+        onSuccess: invalidate,
     })
 }

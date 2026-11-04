@@ -222,7 +222,7 @@ function MarketDetail({
         onSelectMarket={onSelectMarket}
         />
 
-      <ElsewhereSection market={market} />
+      <ElsewhereSection key={market.id} market={market} />
 
       <PriceChart market={market} />
 

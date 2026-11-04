@@ -1,4 +1,5 @@
-import { useElsewhere } from '../api/queries'
+import { useState } from 'react'
+import { useDeleteLink, useElsewhere } from '../api/queries'
 import {
   formatChange,
   formatProbability,
@@ -7,6 +8,7 @@ import {
 import type { OutcomeMarket } from '../types/market'
 import type { ElsewhereEntry, Venue, VenueQuote } from '../types/venue'
 import { formatPrice, formatTime } from '../utils/format'
+import SuggestionsPanel from './SuggestionsPanel'
 
 const VENUE_NAMES: Record<Venue, string> = {
   polymarket: 'Polymarket',
@@ -22,6 +24,16 @@ function quoteMid(quote: VenueQuote): number | null {
   return quote.price
 }
 
+// Suggestions cover Hyperliquid's football match questions only
+// (22.2, decision 3): "Competition: Team A v Team B".
+function canSuggest(market: OutcomeMarket): boolean {
+  return (
+    market.parent !== null &&
+    market.category === 'sports' &&
+    (market.parent.title ?? '').includes(' v ')
+  )
+}
+
 interface EntryProps {
   entry: ElsewhereEntry
   ourPrice: number | null
@@ -30,9 +42,18 @@ interface EntryProps {
 
 function ElsewhereRow({ entry, ourPrice, formatValue }: EntryProps) {
   const { link, quote, error } = entry
+  const remove = useDeleteLink()
   const theirs = quote !== null ? quoteMid(quote) : null
   const difference = theirs !== null && ourPrice !== null ? theirs - ourPrice : null
   const show = (value: number | null) => (value !== null ? formatValue(value) : '—')
+
+  function handleRemove() {
+    // window.confirm: a deliberate second step before deleting data
+    // that a person curated by hand.
+    if (window.confirm(`Remove the ${VENUE_NAMES[link.venue]} link for this outcome?`)) {
+      remove.mutate(link.id)
+    }
+  }
 
   return (
     <li className="elsewhere-row">
@@ -75,6 +96,20 @@ function ElsewhereRow({ entry, ourPrice, formatValue }: EntryProps) {
       )}
 
       {link.note !== '' && <p className="elsewhere-note">⚠ {link.note}</p>}
+
+      <div className="elsewhere-actions">
+        {remove.isError && (
+          <span className="detail-note--error">{remove.error.message}</span>
+        )}
+        <button
+          type="button"
+          className="elsewhere-remove"
+          disabled={remove.isPending}
+          onClick={handleRemove}
+        >
+          {remove.isPending ? 'Removing…' : 'Remove link'}
+        </button>
+      </div>
     </li>
   )
 }
@@ -84,12 +119,15 @@ interface ElsewhereSectionProps {
 }
 
 // Confirmed links to the same event on other venues, with live prices
-// (Milestone 22.3a). Renders nothing until a link exists: an empty
-// section on every market would be noise.
+// (22.3a), plus finding, confirming and removing links (22.3b). Hidden
+// for markets that have no links and cannot get suggestions.
 function ElsewhereSection({ market }: ElsewhereSectionProps) {
   const elsewhere = useElsewhere(market.id)
+  const [searching, setSearching] = useState(false)
+  const suggestable = canSuggest(market)
+  const entries = elsewhere.data ?? []
 
-  if (elsewhere.isPending || elsewhere.isError || elsewhere.data.length === 0) {
+  if (!suggestable && entries.length === 0) {
     return null
   }
 
@@ -101,21 +139,46 @@ function ElsewhereSection({ market }: ElsewhereSectionProps) {
 
   return (
     <section className="detail-section">
-      <h3>Elsewhere</h3>
-      <p className="detail-note">
-        The same event on other venues, linked by hand after comparing the
-        rules. Prices refer to this outcome resolving Yes.
-      </p>
-      <ul className="elsewhere-list">
-        {elsewhere.data.map((entry) => (
-          <ElsewhereRow
-            key={entry.link.id}
-            entry={entry}
-            ourPrice={market.sides[0]?.price ?? null}
-            formatValue={formatValue}
-          />
-        ))}
-      </ul>
+      <div className="section-heading">
+        <h3>Elsewhere</h3>
+        {suggestable && !searching && (
+          <button
+            type="button"
+            className="side-toggle-button"
+            onClick={() => setSearching(true)}
+          >
+            Find on other venues
+          </button>
+        )}
+      </div>
+
+      {entries.length > 0 ? (
+        <>
+          <p className="detail-note">
+            The same event on other venues, linked by hand after comparing
+            the rules. Prices refer to this outcome resolving Yes.
+          </p>
+          <ul className="elsewhere-list">
+            {entries.map((entry) => (
+              <ElsewhereRow
+                key={entry.link.id}
+                entry={entry}
+                ourPrice={market.sides[0]?.price ?? null}
+                formatValue={formatValue}
+              />
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p className="detail-note">No linked markets on other venues yet.</p>
+      )}
+
+      {searching && market.parent !== null && (
+        <SuggestionsPanel
+          questionId={market.parent.id}
+          onClose={() => setSearching(false)}
+        />
+      )}
     </section>
   )
 }

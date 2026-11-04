@@ -1118,3 +1118,112 @@ button {
   background: #fff4d6;
   color: #8a6d00;
 }
+
+
+/* Milestone 22.3b: finding, confirming and removing links */
+
+.elsewhere-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.elsewhere-remove {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #767676;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.suggestions-panel {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border: 1px dashed #bbb;
+  border-radius: 8px;
+}
+
+.suggestion {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.suggestion--done {
+  color: #2e7d44;
+  font-weight: 600;
+}
+
+.suggestion-pairs {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.suggestion-pairs th,
+.suggestion-pairs td {
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid #eee;
+  text-align: left;
+}
+
+.suggestion-rules summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.suggestion-rules p {
+  margin: 0.4rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.suggestion-level {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.suggestion-note {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.suggestion-note textarea {
+  font: inherit;
+  padding: 0.4rem;
+}
+
+.suggestion-confirm {
+  justify-self: start;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid #1a1a1a;
+  border-radius: 6px;
+  background: #1a1a1a;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.suggestion-confirm:disabled {
+  border-color: #ccc;
+  background: #eee;
+  color: #767676;
+  cursor: not-allowed;
+}

@@ -37,3 +37,26 @@ export interface ElsewhereEntry {
   error: string | null
 }
 
+
+// A candidate match on one venue, for a person to confirm (22.2 / 22.3b)
+export interface SuggestedPair {
+    marketId: string // Hyperliquid outcome id
+    outcomeLabel: string
+    quote: VenueQuote
+  }
+  
+  export interface Suggestion {
+    venue: Venue
+    eventTitle: string
+    pairs: SuggestedPair[]
+    unmatched: string[] // Hyperliquid outcomes with no counterpart
+    rules: string // one market's full rules, to compare before confirming
+  }
+  
+  // Body of POST /links: a whole match confirmed at once
+  export interface LinkGroupCreate {
+    venue: Venue
+    matchLevel: MatchLevel
+    note: string
+    links: { marketId: string; externalId: string }[]
+  }
