@@ -1,5 +1,4 @@
 """Suggested cross-venue matches for football questions (Milestone 22.2).
-Football questions are the preliminary scope to test first before expansion
 
 Suggestions are only candidates: a person reads both venues' rules and
 confirms (or ignores) them. Scope, decision 3: Hyperliquid's three-way
@@ -8,6 +7,11 @@ outcomes Team A / Draw / Team B), on Polymarket and Kalshi.
 
 Matching uses WORD BOUNDARIES throughout: the 22 probe's substring
 match found "nfl" inside "inflation".
+
+22.2b: venues name clubs differently ("AEK Athens" on Hyperliquid and
+Kalshi, plain "AEK" on Polymarket), so a team counts as present if ANY
+of its distinctive words appears, and the search tries several queries
+because Polymarket's relevance varies with the wording.
 """
 
 import logging
@@ -42,17 +46,45 @@ def has_word(text: str | None, word: str) -> bool:
     return re.search(rf"\b{re.escape(word)}\b", text or "", re.IGNORECASE) is not None
 
 
-def team_key_word(team: str) -> str:
-    """The most distinctive word of a team name: 'FC Bayern Munich' -> 'Bayern'.
+def team_words(team: str) -> list[str]:
+    """A team's distinctive words, in name order: 'AEK Athens' ->
+    ['AEK', 'Athens']; 'FC Shakhtar Donetsk' -> ['Shakhtar', 'Donetsk'].
 
-    A heuristic: good enough to FIND candidates, never trusted to
-    confirm them.
+    Three letters is enough ("AEK", "PSG"); generic club words are
+    skipped. With no distinctive word at all ('Sporting CP'), the full
+    name is used, which is more specific, not less.
     """
     words = [
         w for w in re.findall(r"[A-Za-z]+", team)
-        if w.lower() not in GENERIC_WORDS and len(w) >= 4
+        if w.lower() not in GENERIC_WORDS and len(w) >= 3
     ]
-    return max(words, key=len) if words else team.strip()
+    return words or [team.strip()]
+
+
+def team_present(text: str | None, team: str) -> bool:
+    """True if ANY distinctive word of the team appears as a whole word.
+
+    Deliberately loose (22.2b): a missed match is invisible, a wrong
+    candidate is visible and a person rejects it. Every other check
+    (both teams, open event, date window) still applies.
+    """
+    return any(has_word(text, word) for word in team_words(team))
+
+
+def search_queries(home: str, away: str) -> list[str]:
+    """Polymarket queries to try in order, without duplicates.
+
+    In the 22.2b probe, "AEK Real Madrid" found the match while "Athens
+    Madrid" and "AEK Athens Real Madrid" did not; no single wording can
+    be trusted, so several are tried.
+    """
+    home_words, away_words = team_words(home), team_words(away)
+    candidates = [
+        f"{home_words[0]} {away_words[0]}",  # first distinctive words
+        f"{home} {away}",  # full names
+        f"{max(home_words, key=len)} {max(away_words, key=len)}",  # longest
+    ]
+    return list(dict.fromkeys(candidates))  # dedupe, keeping order
 
 
 def near(value: Any, target: datetime | None) -> bool:
@@ -107,12 +139,11 @@ class SuggestionFinder:
         if parsed is None:
             return []
         competition, home, away = parsed
-        words = [team_key_word(home), team_key_word(away)]
 
         suggestions = []
         for find_on_venue in (self._polymarket_suggestion, self._kalshi_suggestion):
             try:
-                found = await find_on_venue(members, competition, words)
+                found = await find_on_venue(members, competition, home, away)
             except Exception:
                 logger.exception("Suggestion lookup failed")
                 found = None
@@ -121,36 +152,41 @@ class SuggestionFinder:
         return suggestions
 
     async def _polymarket_suggestion(
-        self, members: list[OutcomeMarket], competition: str, words: list[str]
+        self, members: list[OutcomeMarket], competition: str, home: str, away: str
     ) -> Suggestion | None:
-        events = await self._polymarket.search_events(" ".join(words))
         kickoff = members[0].event_at
-        candidates = [
-            e for e in events
-            if all(has_word(e.get("title"), w) for w in words)
-            and not e.get("closed")
-            and near(e.get("endDate"), kickoff)
-        ]
-        if not candidates:
+        event = None
+        for query in search_queries(home, away):
+            events = await self._polymarket.search_events(query)
+            event = next(
+                (e for e in events
+                 if team_present(e.get("title"), home)
+                 and team_present(e.get("title"), away)
+                 and not e.get("closed")
+                 and near(e.get("endDate"), kickoff)),
+                None,
+            )
+            if event is not None:
+                break
+        if event is None:
             return None
-        event = candidates[0]
         markets = event.get("markets") or []
 
         def pick(member: OutcomeMarket) -> dict[str, Any] | None:
             label = member.parent.outcome_label if member.parent else ""
             if label == "Draw":
                 return next((m for m in markets if has_word(m.get("question"), "draw")), None)
-            word = team_key_word(label)
             return next(
                 (m for m in markets
-                 if has_word(m.get("question"), word) and not has_word(m.get("question"), "draw")),
+                 if team_present(m.get("question"), label)
+                 and not has_word(m.get("question"), "draw")),
                 None,
             )
 
         return self._build("polymarket", str(event.get("title", "")), members, pick, polymarket_quote)
 
     async def _kalshi_suggestion(
-        self, members: list[OutcomeMarket], competition: str, words: list[str]
+        self, members: list[OutcomeMarket], competition: str, home: str, away: str
     ) -> Suggestion | None:
         wanted = competition_words(competition)
         series = [
@@ -162,7 +198,7 @@ class SuggestionFinder:
         ]
         for one in series[:3]:
             for event in await self._kalshi.fetch_open_events(str(one.get("ticker"))):
-                if not all(has_word(event.get("title"), w) for w in words):
+                if not (team_present(event.get("title"), home) and team_present(event.get("title"), away)):
                     continue
                 markets = event.get("markets") or []
                 if markets and not near(markets[0].get("occurrence_datetime"), members[0].event_at):
@@ -172,8 +208,7 @@ class SuggestionFinder:
                     label = member.parent.outcome_label if member.parent else ""
                     if label == "Draw":
                         return next((m for m in markets if has_word(m.get("yes_sub_title"), "tie")), None)
-                    word = team_key_word(label)
-                    return next((m for m in markets if has_word(m.get("yes_sub_title"), word)), None)
+                    return next((m for m in markets if team_present(m.get("yes_sub_title"), label)), None)
 
                 return self._build("kalshi", str(event.get("title", "")), members, pick, kalshi_quote)
         return None
