@@ -14,6 +14,7 @@ import {
  } from '../features/markets/pricing'
  import ChangeBadge from './ChangeBadge'
 import OrderBookPanel from './OrderBookPanel'
+import ElsewhereSection from './ElsewhereSection'
 import LookalikesSection from './LookalikesSection'
 import PriceChart from './PriceChart'
 import TimeValue from './TimeValue'
@@ -220,6 +221,8 @@ function MarketDetail({
         lookalikes={market.lookalikes}
         onSelectMarket={onSelectMarket}
         />
+
+      <ElsewhereSection market={market} />
 
       <PriceChart market={market} />
 

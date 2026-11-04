@@ -3,6 +3,7 @@ import type { CandleRange } from '../types/candle'
 import {
     ApiError,
     fetchDeployers,
+    fetchElsewhere,
     fetchMarketDetail,
     fetchMarkets,
     fetchPriceHistory,
@@ -19,6 +20,8 @@ export const marketKeys = {
     priceHistory: (marketId: string | null, range: CandleRange) =>
         ['markets', 'priceHistory', marketId, range] as const,
     deployers: ['deployers'] as const,
+    elsewhere: (marketId: string | null) => 
+        ['markets', 'elsewhere', marketId] as const,
 }
 
 // Backend snapshots refreshes every 15s, so data younger than 15s
@@ -83,5 +86,23 @@ export function useDeployers() {
         queryFn: ({ signal }) => fetchDeployers(signal),
         staleTime: SERVER_CACHE_MS,
         refetchInterval: POLL_MS,
+    })
+}
+
+
+// Linked markets on other venues (Milestone 22.3). The backend caches
+// each external quote for 30 s (decision 5), so polling faster would
+// only return copies.
+const ELSEWHERE_MS = 30_000
+
+export function useElsewhere(marketId: string | null) {
+    return useQuery({
+        queryKey: marketKeys.elsewhere(marketId),
+        queryFn:
+            marketId === null
+                ? skipToken
+                : ({ signal }) => fetchElsewhere(marketId, signal),
+        staleTime: ELSEWHERE_MS,
+        refetchInterval: ELSEWHERE_MS,
     })
 }

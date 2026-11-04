@@ -1053,3 +1053,68 @@ button {
   text-transform: capitalize;
   color: #555;
 }
+
+
+/* Milestone 22.3a: Elsewhere (linked markets on other venues) */
+
+.elsewhere-list {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.elsewhere-row {
+  padding: 0.75rem 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+}
+
+.elsewhere-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.elsewhere-title {
+  margin: 0.35rem 0;
+  overflow-wrap: anywhere;
+}
+
+.elsewhere-prices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.25rem;
+  margin: 0.35rem 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.elsewhere-muted {
+  color: #767676;
+  font-size: 0.85rem;
+}
+
+.elsewhere-note {
+  margin: 0.5rem 0 0;
+  color: #8a6d00;
+  font-size: 0.85rem;
+}
+
+.match-badge {
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.match-badge--identical {
+  background: #e5f3e8;
+  color: #2e7d44;
+}
+
+.match-badge--comparable {
+  background: #fff4d6;
+  color: #8a6d00;
+}

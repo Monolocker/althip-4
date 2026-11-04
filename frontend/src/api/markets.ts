@@ -5,6 +5,7 @@ import type {
   OutcomeMarket,
   OutcomeMarketDetail,
 } from '../types/market'
+import type { ElsewhereEntry } from '../types/venue'
 
 const API_BASE_URL = 'http://127.0.0.1:8000'
 
@@ -52,6 +53,17 @@ export async function fetchMarketDetail(
   return requestJson<OutcomeMarketDetail>(
     `/markets/${encodeURIComponent(marketId)}`,
     `market ${marketId}`,
+    signal,
+  )
+}
+
+export async function fetchElsewhere(
+  marketId: string,
+  signal?: AbortSignal,
+): Promise<ElsewhereEntry[]> {
+  return requestJson<ElsewhereEntry[]>(
+    `/markets/${encodeURIComponent(marketId)}/elsewhere`,
+    `other venues for market ${marketId}`,
     signal,
   )
 }
