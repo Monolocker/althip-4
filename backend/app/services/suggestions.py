@@ -17,6 +17,7 @@ because Polymarket's relevance varies with the wording.
 import logging
 import re
 import time
+import unicodedata
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -26,6 +27,25 @@ from app.services.kalshi import KalshiClient, kalshi_quote
 from app.services.polymarket import PolymarketClient, polymarket_quote
 
 logger = logging.getLogger(__name__)
+
+# Letters that Unicode does not decompose into "base letter + accent",
+# mapped by hand to their plain spelling (22.2c).
+FOLD_TABLE = str.maketrans({
+    "ø": "o", "Ø": "O", "æ": "ae", "Æ": "AE", "ß": "ss",
+    "ł": "l", "Ł": "L", "đ": "d", "Đ": "D", "ı": "i",
+})
+
+
+def fold(text: str | None) -> str:
+    """'Fenerbahçe' -> 'Fenerbahce', 'Bodø' -> 'Bodo' (22.2c).
+
+    Hyperliquid writes "Fenerbahce", Polymarket "Fenerbahçe". NFKD
+    normalization splits "ç" into "c" plus a combining cedilla, and the
+    combining marks are then dropped; FOLD_TABLE covers letters that do
+    not decompose. Applied to BOTH sides of every comparison.
+    """
+    decomposed = unicodedata.normalize("NFKD", (text or "").translate(FOLD_TABLE))
+    return "".join(c for c in decomposed if not unicodedata.combining(c))
 
 # Words too common in club names to identify a team ("FC Bayern Munich").
 GENERIC_WORDS = {
@@ -43,7 +63,7 @@ SAME_MATCH_WINDOW = timedelta(days=1)
 
 
 def has_word(text: str | None, word: str) -> bool:
-    return re.search(rf"\b{re.escape(word)}\b", text or "", re.IGNORECASE) is not None
+    return re.search(rf"\b{re.escape(fold(word))}\b", fold(text), re.IGNORECASE) is not None
 
 
 def team_words(team: str) -> list[str]:
@@ -54,8 +74,10 @@ def team_words(team: str) -> list[str]:
     skipped. With no distinctive word at all ('Sporting CP'), the full
     name is used, which is more specific, not less.
     """
+       # [^\W\d_]+ = runs of letters in ANY alphabet; [A-Za-z]+ would cut
+    # "Fenerbahçe" into "Fenerbah" and "e". Folding first keeps it whole.
     words = [
-        w for w in re.findall(r"[A-Za-z]+", team)
+        w for w in re.findall(r"[^\W\d_]+", fold(team))
         if w.lower() not in GENERIC_WORDS and len(w) >= 3
     ]
     return words or [team.strip()]
@@ -115,7 +137,7 @@ def parse_match_title(title: str) -> tuple[str, str, str] | None:
 
 def competition_words(competition: str) -> set[str]:
     return {
-        w.lower() for w in re.findall(r"[A-Za-z]+", competition)
+        w.lower() for w in re.findall(r"[^\W\d_]+", fold(competition))
         if w.lower() not in GENERIC_COMPETITION_WORDS and len(w) >= 3
     }
 
