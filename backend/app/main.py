@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.models.deployers import DeployerStats
 from app.models.book import OrderBook
 from app.models.candle import CandleRange, PriceHistory
+from app.models.costs import ExecutionEstimate, VenueCost
 from app.models.market import OutcomeMarket, OutcomeMarketDetail
 from app.models.venue import (
     ElsewhereEntry,
@@ -28,9 +29,16 @@ from app.models.venue import (
 )
 from app.services.analytics import deployer_stats, find_lookalikes
 from app.services.history import HistoryRecorder, HistoryStore, bucket_prices
-from app.services.kalshi import KalshiClient, KalshiError, kalshi_quote
+from app.services.execution import hyperliquid_cost, kalshi_cost, polymarket_cost
+from app.services.kalshi import KalshiClient, KalshiError, kalshi_levels, kalshi_quote
 from app.services.links import DuplicateLinkError, LinkStore
-from app.services.polymarket import PolymarketClient, PolymarketError, polymarket_quote
+from app.services.polymarket import (
+    PolymarketClient, 
+    PolymarketError,
+    polymarket_levels,
+    polymarket_quote,
+    yes_token_id,
+)
 from app.services.suggestions import SuggestionFinder
 from app.services.sweep import BookSweeper
 from app.services.hyperliquid import HyperliquidClient, HyperliquidError
@@ -138,6 +146,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.suggestions = SuggestionFinder(app.state.polymarket, app.state.kalshi)
     # (venue, external_id) -> (fetched_at_monotonic, VenueQuote | None)
     app.state.venue_quotes = {}
+    # Execution-cost inputs (22.4): key -> (fetched_at_monotonic, value)
+    app.state.execution_cache = {}
     app.state.snapshot = None
     # (fetched_at_monotonic, {template id: template}) or None
     app.state.templates = None
@@ -595,3 +605,167 @@ async def delete_link(link_id: int) -> Response:
     if not await asyncio.to_thread(store.delete, link_id):
         raise HTTPException(status_code=404, detail=f"No link {link_id}")
     return Response(status_code=204)
+
+
+
+# ---------------------------------------------------------------
+# Execution costs (Milestone 22.4)
+# ---------------------------------------------------------------
+
+# How long each input is reused. Books move, so 10 s; fee schedules
+# change rarely, so an hour (Hyperliquid) or a day (Kalshi series).
+BOOK_INPUT_TTL = 10.0
+MARKET_INPUT_TTL = 60.0
+HL_FEES_TTL = 3600.0
+KALSHI_SERIES_TTL = 24 * 3600.0
+EMPTY_ADDRESS = "0x" + "0" * 40  # no history: userFees returns BASE rates
+
+EXECUTION_ASSUMPTIONS = [
+    "Buying the outcome's Yes side by crossing the book now (taker orders).",
+    "Each venue's base fee rate; your own tier or discounts may be lower.",
+    "Books as of the times shown; prices can move before an order arrives.",
+    "Prices and fees in dollars per $1 contract.",
+]
+
+
+async def cached_input(key: tuple, ttl: float, fetch):
+    """Reuse a fetched input for `ttl` seconds (keyed by venue + id)."""
+    cache: dict[tuple, tuple[float, object]] = app.state.execution_cache
+    hit = cache.get(key)
+    now = time.monotonic()
+    if hit is not None and now - hit[0] < ttl:
+        return hit[1]
+    value = await fetch()
+    cache[key] = (now, value)
+    return value
+
+
+async def hyperliquid_execution(market: OutcomeMarket, raw: dict, size: float) -> VenueCost:
+    book = await market_book(market.id, 0)
+    client: HyperliquidClient = app.state.hyperliquid
+    fees = await cached_input(
+        ("hyperliquid", "userFees"), HL_FEES_TTL, lambda: client.fetch_user_fees(EMPTY_ADDRESS)
+    )
+    try:
+        scale = float(raw.get("deployerFeeScale") or 0)
+    except ValueError:
+        scale = 0.0
+    return hyperliquid_cost(
+        title=market.question,
+        asks=[(level.price, level.size) for level in book.asks],
+        bids=[(level.price, level.size) for level in book.bids],
+        size=size,
+        taker_rate=float(fees["userSpotCrossRate"]),
+        deployer_fee_scale=scale,
+        book_time=book.fetched_at,
+    )
+
+
+async def polymarket_execution(link: VenueLink, size: float) -> VenueCost:
+    client: PolymarketClient = app.state.polymarket
+    raw = await cached_input(
+        ("polymarket", "market", link.external_id),
+        MARKET_INPUT_TTL,
+        lambda: client.fetch_market(link.external_id),
+    )
+    if raw is None:
+        raise PolymarketError("Market no longer listed on Polymarket")
+    token = yes_token_id(raw)
+    if token is None:
+        raise PolymarketError("Market has no order-book token")
+    book = await cached_input(
+        ("polymarket", "book", token), BOOK_INPUT_TTL, lambda: client.fetch_book(token)
+    )
+    asks, bids = polymarket_levels(book)
+    schedule = raw.get("feeSchedule") if raw.get("feesEnabled") else None
+    schedule = schedule if isinstance(schedule, dict) else {}
+    try:
+        book_time = datetime.fromtimestamp(int(book["timestamp"]) / 1000, tz=timezone.utc)
+    except (KeyError, TypeError, ValueError):
+        book_time = datetime.now(timezone.utc)
+    return polymarket_cost(
+        external_id=link.external_id,
+        title=str(raw.get("question", "")),
+        match_level=link.match_level,
+        asks=asks,
+        bids=bids,
+        size=size,
+        rate=float(schedule.get("rate") or 0),
+        exponent=float(schedule.get("exponent") or 1),
+        min_order_size=float(raw["orderMinSize"]) if raw.get("orderMinSize") else None,
+        book_time=book_time,
+    )
+
+
+async def kalshi_execution(link: VenueLink, size: float) -> VenueCost:
+    client: KalshiClient = app.state.kalshi
+    raw = await cached_input(
+        ("kalshi", "market", link.external_id),
+        MARKET_INPUT_TTL,
+        lambda: client.fetch_market(link.external_id),
+    )
+    if raw is None:
+        raise KalshiError("Market no longer listed on Kalshi")
+    book = await cached_input(
+        ("kalshi", "book", link.external_id),
+        BOOK_INPUT_TTL,
+        lambda: client.fetch_orderbook(link.external_id),
+    )
+    asks, bids = kalshi_levels(book)
+    # A Kalshi ticker starts with its series: KXEPLGAME-26NOV08IPSBOU-TIE.
+    series_ticker = link.external_id.split("-")[0]
+    series = await cached_input(
+        ("kalshi", "series", series_ticker),
+        KALSHI_SERIES_TTL,
+        lambda: client.fetch_series_info(series_ticker),
+    )
+    quote = kalshi_quote(raw)
+    return kalshi_cost(
+        external_id=link.external_id,
+        title=quote.title,
+        match_level=link.match_level,
+        asks=asks,
+        bids=bids,
+        size=size,
+        fee_type=str(series.get("fee_type", "")),
+        fee_multiplier=float(series.get("fee_multiplier") or 1),
+        book_time=datetime.now(timezone.utc),
+    )
+
+
+@app.get("/markets/{market_id}/execution")
+async def market_execution(
+    market_id: str,
+    size: float = Query(gt=0, le=1_000_000),
+) -> ExecutionEstimate:
+    """What buying `size` contracts would cost on Hyperliquid and on
+    every confirmed link (Milestone 22.4). One venue failing only marks
+    its own row with an error."""
+    snapshot = await get_snapshot()
+    market = next((m for m in snapshot.markets if m.id == market_id), None)
+    if market is None:
+        raise HTTPException(status_code=404, detail=f"Market {market_id} is not a live market")
+
+    venues: list[VenueCost] = []
+    try:
+        venues.append(await hyperliquid_execution(market, snapshot.raw_by_id[market_id], size))
+    except (HyperliquidError, HTTPException, KeyError, ValueError) as exc:
+        venues.append(VenueCost(venue="hyperliquid", external_id=None, title=market.question,
+                                match_level=None, error=str(getattr(exc, "detail", exc))))
+
+    store: LinkStore = app.state.link_store
+    for link in await asyncio.to_thread(store.links_for_market, market_id):
+        estimate = polymarket_execution if link.venue == "polymarket" else kalshi_execution
+        try:
+            venues.append(await estimate(link, size))
+        except (PolymarketError, KalshiError, KeyError, ValueError) as exc:
+            venues.append(VenueCost(venue=link.venue, external_id=link.external_id, title="",
+                                    match_level=link.match_level, error=str(exc)))
+
+    return ExecutionEstimate(
+        market_id=market_id,
+        size=size,
+        settles_at=market.event_at or market.resolves_by,
+        assumptions=EXECUTION_ASSUMPTIONS,
+        venues=venues,
+    )

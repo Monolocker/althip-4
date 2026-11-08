@@ -21,6 +21,8 @@ import httpx
 from app.models.venue import VenueQuote
 
 GAMMA_URL = "https://gamma-api.polymarket.com"
+CLOB_URL = "https://clob.polymarket.com"
+
 REQUEST_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 
 
@@ -69,7 +71,55 @@ class PolymarketClient:
         data = response.json()
         events = data.get("events") if isinstance(data, dict) else None
         return events if isinstance(events, list) else []
-    
+
+
+    async def fetch_book(self, token_id: str) -> dict[str, Any]:
+        """The CLOB order book for one outcome token (Milestone 22.4).
+
+        Observed (22.4 probe): {"bids": [{"price": "0.25", "size": ...}],
+        "asks": [...], "tick_size": "0.01", "min_order_size": "5", ...}
+        with bids ASCENDING and asks DESCENDING: the best price of each
+        is the LAST entry. Never walk this list as delivered; use
+        polymarket_levels(), which sorts best-first.
+        """
+        try:
+            response = await self._http.get(
+                f"{CLOB_URL}/book", params={"token_id": token_id}, timeout=REQUEST_TIMEOUT
+            )
+        except httpx.HTTPError as exc:
+            raise PolymarketError(f"Polymarket request failed: {exc}") from exc
+        if response.status_code != 200:
+            raise PolymarketError(f"Polymarket book returned HTTP {response.status_code}")
+        data = response.json()
+        if not isinstance(data, dict):
+            raise PolymarketError(f"Unexpected book shape: {type(data).__name__}")
+        return data
+
+
+def yes_token_id(raw_market: dict[str, Any]) -> str | None:
+    """The CLOB token id of the market's FIRST outcome (the side our
+    VenueQuote prices): clobTokenIds is double-encoded like outcomes."""
+    tokens = _decode_list(raw_market.get("clobTokenIds"))
+    return str(tokens[0]) if tokens else None
+
+
+def polymarket_levels(raw_book: dict[str, Any]) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+    """(asks, bids) as (price, size) pairs, sorted BEST FIRST:
+    asks ascending, bids descending. Malformed levels are skipped."""
+
+    def parse(levels: Any) -> list[tuple[float, float]]:
+        parsed = []
+        for level in levels if isinstance(levels, list) else []:
+            try:
+                parsed.append((float(level["price"]), float(level["size"])))
+            except (KeyError, TypeError, ValueError):
+                continue
+        return [pair for pair in parsed if pair[1] > 0]
+
+    asks = sorted(parse(raw_book.get("asks")))
+    bids = sorted(parse(raw_book.get("bids")), reverse=True)
+    return asks, bids
+
 
 def _decode_list(value: Any) -> list[Any]:
     """'["Yes", "No"]' (a string) or ["Yes", "No"] (a list) -> a list."""

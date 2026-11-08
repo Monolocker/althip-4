@@ -79,6 +79,28 @@ class KalshiClient:
         if not isinstance(events, list):
             raise KalshiError("Unexpected events shape: no 'events' list")
         return events
+    
+    async def fetch_orderbook(self, ticker: str) -> dict[str, Any]:
+        """One market's order book (Milestone 22.4).
+
+        Observed (22.4 probe): {"orderbook_fp": {"yes_dollars": [[price,
+        size], ...], "no_dollars": [...]}}, both ascending (best LAST).
+        There is no ask list: a No bid at 0.74 IS a Yes ask at 0.26.
+        Use kalshi_levels() to get Yes asks and bids best-first.
+        """
+        data = await self._get_json(f"{KALSHI_URL}/markets/{ticker}/orderbook")
+        book = data.get("orderbook_fp") if isinstance(data, dict) else None
+        if not isinstance(book, dict):
+            raise KalshiError("Unexpected orderbook shape: no 'orderbook_fp' object")
+        return book
+
+    async def fetch_series_info(self, series_ticker: str) -> dict[str, Any]:
+        """One series: carries the fee model (fee_type, fee_multiplier)."""
+        data = await self._get_json(f"{KALSHI_URL}/series/{series_ticker}")
+        series = data.get("series") if isinstance(data, dict) else None
+        if not isinstance(series, dict):
+            raise KalshiError("Unexpected series shape: no 'series' object")
+        return series
 
     async def _get_json(
         self,
@@ -125,6 +147,30 @@ def _time(value: Any) -> datetime | None:
         return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
+
+def kalshi_levels(book: dict[str, Any]) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+    """(Yes asks, Yes bids) as (price, size) pairs, sorted BEST FIRST.
+
+    Yes bids come straight from "yes_dollars". Yes asks are derived
+    from No bids: buying Yes at 1 - p matches someone bidding p for No
+    (the same merged-book idea as Hyperliquid's two sides, 18.3b).
+    """
+
+    def parse(levels: Any) -> list[tuple[float, float]]:
+        parsed = []
+        for level in levels if isinstance(levels, list) else []:
+            try:
+                price, size = float(level[0]), float(level[1])
+            except (IndexError, TypeError, ValueError):
+                continue
+            if size > 0:
+                parsed.append((price, size))
+        return parsed
+
+    bids = sorted(parse(book.get("yes_dollars")), reverse=True)
+    # round(): 1 - 0.74 is 0.26000000000000001 in binary floating point.
+    asks = sorted((round(1 - price, 6), size) for price, size in parse(book.get("no_dollars")))
+    return asks, bids
 
 
 def kalshi_quote(raw: dict[str, Any]) -> VenueQuote:

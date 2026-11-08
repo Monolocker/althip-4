@@ -165,6 +165,20 @@ class HyperliquidClient:
             )
         return data
     
+    async def fetch_user_fees(self, user: str) -> dict[str, Any]:
+        """Fee rates for one address (Milestone 22.4).
+
+        Asked about an address with no history, this returns the BASE
+        rates, e.g. "userSpotCrossRate": "0.0007" (taker, 7 bps) and
+        "userSpotAddRate": "0.0004" (maker). Outcomes use the spot rates.
+        """
+        data = await self._post_info({"type": "userFees", "user": user})
+        if not isinstance(data, dict):
+            raise HyperliquidError(
+                f"Unexpected userFees response shape: {type(data).__name__}"
+            )
+        return data
+    
     async def _post_info(self, body: dict[str, Any]) -> Any:
         """POST a request body to the info endpoint and return parsed JSON"""
         try:
