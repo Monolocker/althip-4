@@ -223,7 +223,7 @@ function MarketDetail({
         onSelectMarket={onSelectMarket}
         />
 
-      <ElsewhereSection key={market.id} market={market} />
+      <ElsewhereSection key={`elsewhere-${market.id}`} market={market} />
 
       {!isSettled && <ExecutionCostSection market={market} />}
 
