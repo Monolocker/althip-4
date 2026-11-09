@@ -1227,3 +1227,97 @@ button {
   color: #767676;
   cursor: not-allowed;
 }
+
+
+
+/* Milestone 22.4: Cost to buy */
+
+.cost-size {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.cost-size-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.cost-size-input input {
+  width: 6.5rem;
+  padding: 0.3rem 0.4rem;
+  font: inherit;
+}
+
+.cost-table {
+  margin-top: 0.75rem;
+  overflow-x: auto;
+  transition: opacity 0.15s;
+}
+
+.cost-table--updating {
+  opacity: 0.55;
+}
+
+.cost-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.cost-table th,
+.cost-table td {
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.cost-table th {
+  border-bottom: 1px solid #ddd;
+  color: #555;
+  font-weight: 600;
+}
+
+.cost-table td .match-badge,
+.cost-cheapest {
+  margin-left: 0.4rem;
+}
+
+.cost-cheapest {
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.cost-row--cheapest td {
+  background: #f3faf5;
+}
+
+.cost-detail-row td {
+  padding-top: 0;
+  border-bottom: 1px solid #eee;
+  color: #767676;
+  font-size: 0.75rem;
+  white-space: normal;
+}
+
+.cost-warning {
+  display: block;
+  margin-top: 0.2rem;
+  color: #8a6d00;
+}
+
+.cost-notes {
+  margin: 0.75rem 0 0;
+  padding-left: 1.1rem;
+  color: #767676;
+  font-size: 0.8rem;
+}

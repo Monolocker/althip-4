@@ -4,6 +4,7 @@ import {
     useQuery,
     useQueryClient, 
 } from '@tanstack/react-query'
+import { keepPreviousData } from '@tanstack/react-query'
 import type { CandleRange } from '../types/candle'
 import {
     ApiError,
@@ -11,6 +12,7 @@ import {
     createLinks,
     deleteLink,
     fetchElsewhere,
+    fetchExecution,
     fetchSuggestions,
     fetchMarketDetail,
     fetchMarkets,
@@ -158,5 +160,26 @@ export function useDeleteLink() {
     return useMutation({
         mutationFn: deleteLink,
         onSuccess: invalidate,
+    })
+}
+
+
+// Execution costs for one size (Milestone 22.4). The backend reuses each
+// book for 10 s, so refreshing every 15 s keeps the numbers current
+// without asking three venues more often than their books can change.
+const EXECUTION_MS = 15_000
+
+export function useExecution(marketId: string, size: number | null) {
+    return useQuery({
+        queryKey: ['markets', 'execution', marketId, size] as const,
+        queryFn:
+            size === null
+                ? skipToken
+                : ({ signal }) => fetchExecution(marketId, size, signal),
+        staleTime: EXECUTION_MS,
+        refetchInterval: EXECUTION_MS,
+        // While a NEW size loads, keep showing the previous size's table
+        // (marked as updating) instead of flashing a loading message.
+        placeholderData: keepPreviousData,
     })
 }

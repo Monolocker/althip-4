@@ -15,6 +15,7 @@ import {
  import ChangeBadge from './ChangeBadge'
 import OrderBookPanel from './OrderBookPanel'
 import ElsewhereSection from './ElsewhereSection'
+import ExecutionCostSection from './ExecutionCostSection'
 import LookalikesSection from './LookalikesSection'
 import PriceChart from './PriceChart'
 import TimeValue from './TimeValue'
@@ -223,6 +224,8 @@ function MarketDetail({
         />
 
       <ElsewhereSection key={market.id} market={market} />
+
+      {!isSettled && <ExecutionCostSection market={market} />}
 
       <PriceChart market={market} />
 

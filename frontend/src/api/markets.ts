@@ -1,6 +1,7 @@
 import type { OrderBook } from '../types/book'
 import type { CandleRange, PriceHistory } from '../types/candle'
 import type { DeployerStats } from '../types/deployer'
+import type { ExecutionEstimate } from '../types/execution'
 import type {
   OutcomeMarket,
   OutcomeMarketDetail,
@@ -109,6 +110,18 @@ export async function fetchMarketDetail(
   return requestJson<OutcomeMarketDetail>(
     `/markets/${encodeURIComponent(marketId)}`,
     `market ${marketId}`,
+    signal,
+  )
+}
+
+export async function fetchExecution(
+  marketId: string,
+  size: number,
+  signal?: AbortSignal,
+): Promise<ExecutionEstimate> {
+  return requestJson<ExecutionEstimate>(
+    `/markets/${encodeURIComponent(marketId)}/execution?size=${size}`,
+    `execution costs for market ${marketId}`,
     signal,
   )
 }
