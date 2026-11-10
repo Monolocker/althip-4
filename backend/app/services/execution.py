@@ -110,6 +110,17 @@ def _assemble(
     )
 
 
+def deployer_fee_factor(scale: float) -> float:
+    """How a market's deployerFeeScale multiplies Hyperliquid's fees.
+
+    Hyperliquid's published formula (the HIP-3 branch): x(scale + 1)
+    below 1, x(2 * scale) from 1; scale 0 leaves fees unchanged.
+    Verified for outcomes in the 23 probe: `out` markets (scale 1.0)
+    charged a median 14 bps at settlement, twice the 7 bps base rate.
+    """
+    return scale + 1 if scale < 1 else 2 * scale
+
+
 def hyperliquid_cost(
     *,
     title: str,
@@ -121,19 +132,13 @@ def hyperliquid_cost(
     book_time: datetime | None,
 ) -> VenueCost:
     walk = walk_book(asks, size)
-    warnings = []
-    if deployer_fee_scale > 0:
-        # Hyperliquid's published formula applies deployerFeeScale only
-        # to HIP-3 perps (x(scale+1) below 1, x(2*scale) from 1); its
-        # outcome section does not say whether outcomes use it. Stated,
-        # not guessed.
-        doubled = taker_rate * (deployer_fee_scale + 1 if deployer_fee_scale < 1 else 2 * deployer_fee_scale)
-        warnings.append(
-            f"This market sets deployerFeeScale {deployer_fee_scale:g}. Hyperliquid's docs "
-            "do not say how it applies to outcomes; if it scales fees as it does for HIP-3 "
-            f"perps, the settlement fee would be {doubled * 10_000:g} bps instead of "
-            f"{taker_rate * 10_000:g} bps."
-        )
+    rate = taker_rate * deployer_fee_factor(deployer_fee_scale)
+    scale_note = (
+        f" (base {taker_rate * 10_000:g} bps x{deployer_fee_factor(deployer_fee_scale):g} "
+        f"for deployerFeeScale {deployer_fee_scale:g})"
+        if deployer_fee_scale > 0
+        else ""
+    )
     return _assemble(
         venue="hyperliquid",
         external_id=None,
@@ -143,12 +148,12 @@ def hyperliquid_cost(
         bids=bids,
         walk=walk,
         fee_now=0.0,
-        fee_if_wins=taker_rate * walk.filled,  # settle_fraction 1 on a win
+        fee_if_wins=rate * walk.filled,  # settle_fraction 1 on a win
         fee_basis=(
-            f"No fee to open; {taker_rate * 10_000:g} bps on the payout at "
-            "settlement, only if it wins (base tier)"
+            f"No fee to open; {rate * 10_000:g} bps on the payout at settlement, "
+            f"only if it wins{scale_note} (base tier)"
         ),
-        warnings=warnings,
+        warnings=[],
         book_time=book_time,
     )
 

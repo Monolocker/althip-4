@@ -40,6 +40,8 @@ from app.services.polymarket import (
     yes_token_id,
 )
 from app.services.suggestions import SuggestionFinder
+from app.services.trade_watcher import TradeWatcher
+from app.services.traders import TraderStore
 from app.services.sweep import BookSweeper
 from app.services.hyperliquid import HyperliquidClient, HyperliquidError
 from app.services.normalize import (
@@ -175,14 +177,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.hyperliquid.fetch_settled_outcome,
         )
     record_task = asyncio.create_task(app.state.recorder.run_forever())
+    # Outcome trader discovery, live trade stream
+    app.state.trader_store = TraderStore()
+    await asyncio.to_thread(app.state.trader_store.initialize)
+    app.state.trade_watcher = TradeWatcher(app.state.trader_store, outcome_coins_by_volume)
+    watch_task = asyncio.create_task(app.state.trade_watcher.run_forever())
+
 
     yield
 
     # Shutdown order matters: stop the background tasks before closing the HTTP
     # client they use, then wait for the cancellations.
-    for task in (record_task, sweep_task):
+    for task in (watch_task, record_task, sweep_task):
         task.cancel()
-    for task in (record_task, sweep_task):
+    for task in (watch_task, record_task, sweep_task):
         with contextlib.suppress(asyncio.CancelledError):
             await task
     await app.state.http.aclose()
@@ -233,6 +241,12 @@ async def side0_coins() -> list[str]:
     snapshot = await get_snapshot()
     return [m.sides[0].coin for m in snapshot.markets if m.sides]
 
+async def outcome_coins_by_volume() -> list[str]:
+    """Every live outcome coin (both sides), busiest markets first, so a
+    subscription cap drops the quietest markets, never the busiest."""
+    snapshot = await get_snapshot()
+    ranked = sorted(snapshot.markets, key=lambda m: m.volume_24h or 0, reverse=True)
+    return [side.coin for market in ranked for side in market.sides]
 
 async def live_markets() -> list[OutcomeMarket]:
     """What the history recorder samples: every market in the snapshot."""
@@ -294,12 +308,24 @@ class HistoryStatus(BaseModel):
     pending_settlements: int = Field(alias="pendingSettlements")
     file_bytes: int = Field(alias="fileBytes")
 
+class TradeWatchStatus(BaseModel):
+    """Whether trader discovery is connected and finding traders (23.1)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    connected: bool
+    subscriptions: int
+    trades_seen: int = Field(alias="tradesSeen")
+    traders_known: int = Field(alias="tradersKnown")
+    last_trade_at: datetime | None = Field(alias="lastTradeAt")
+
 class HealthResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     status: str
     book_sweep: SweepStatus = Field(alias="bookSweep")
     history: HistoryStatus
+    trade_watch: TradeWatchStatus = Field(alias="tradeWatch")
 
 
 @app.get("/health", response_model_by_alias=True)
@@ -309,6 +335,7 @@ async def health() -> HealthResponse:
     sweeper: BookSweeper = app.state.sweeper
     recorder: HistoryRecorder = app.state.recorder
     store: HistoryStore = app.state.history_store
+    watcher: TradeWatcher = app.state.trade_watcher
     completed = sweeper.last_completed_at
     return HealthResponse(
         status="ok",
@@ -332,6 +359,17 @@ async def health() -> HealthResponse:
             settlements_recorded = recorder.settlements_recorded,
             pending_settlements=recorder.pending_settlements,
             file_bytes=store.file_size(),
+        ),
+        trade_watch=TradeWatchStatus(
+            connected=watcher.connected,
+            subscriptions=watcher.subscriptions,
+            trades_seen=watcher.trades_seen,
+            traders_known=watcher.traders_known,
+            last_trade_at=(
+                datetime.fromtimestamp(watcher.last_trade_at, tz=timezone.utc)
+                if watcher.last_trade_at is not None
+                else None
+            ),
         ),
     )
 
