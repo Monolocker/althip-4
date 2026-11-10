@@ -1321,3 +1321,50 @@ button {
   color: #767676;
   font-size: 0.8rem;
 }
+
+
+/* Milestone 22.5: already-linked state and manual linking */
+
+.suggestion-linked {
+  margin: 0;
+  color: #2e7d44;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.lookup-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.lookup-input {
+  flex: 1;
+  min-width: 12rem;
+  padding: 0.4rem 0.5rem;
+  font: inherit;
+}
+
+.lookup-results {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lookup-result {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.lookup-result--chosen {
+  border-color: #1a1a1a;
+}

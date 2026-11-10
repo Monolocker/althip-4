@@ -11,6 +11,8 @@ import type {
   LinkGroupCreate,
   Suggestion,
   VenueLink,
+  Venue, 
+  VenueQuote,
 } from '../types/venue'
 
 const API_BASE_URL = 'http://127.0.0.1:8000'
@@ -85,6 +87,20 @@ export async function fetchSuggestions(
   return requestJson<Suggestion[]>(
     `/questions/${encodeURIComponent(questionId)}/suggestions`,
     `suggestions for question ${questionId}`,
+    signal,
+  )
+}
+
+// The other venue's market(s) for a pasted link, id, ticker or words
+// (Milestone 22.5, manual linking).
+export async function fetchVenueLookup(
+  venue: Venue,
+  reference: string,
+  signal?: AbortSignal,
+): Promise<VenueQuote[]> {
+  return requestJson<VenueQuote[]>(
+    `/venues/${venue}/lookup?ref=${encodeURIComponent(reference)}`,
+    `${venue} market lookup`,
     signal,
   )
 }

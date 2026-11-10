@@ -6,6 +6,7 @@ import {
 } from '@tanstack/react-query'
 import { keepPreviousData } from '@tanstack/react-query'
 import type { CandleRange } from '../types/candle'
+import type { Venue } from '../types/venue'
 import {
     ApiError,
     fetchDeployers,
@@ -14,10 +15,12 @@ import {
     fetchElsewhere,
     fetchExecution,
     fetchSuggestions,
+    fetchVenueLookup,
     fetchMarketDetail,
     fetchMarkets,
     fetchPriceHistory,
 } from './markets'
+
 
 // Query keys are cache addresses. Keeping them in one place means 
 // every component asking for the same data shares one cache entry
@@ -144,7 +147,12 @@ export function useSuggestions(questionId: string | null, enabled: boolean) {
 function useInvalidateElsewhere() {
     const queryClient = useQueryClient()
     return () =>
-        queryClient.invalidateQueries({ queryKey: ['markets', 'elsewhere'] })
+        Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['markets', 'elsewhere'] }),
+            // A new or removed link also adds or removes a row in "Cost to buy"
+            // so those tables refetch too
+            queryClient.invalidateQueries({ queryKey: ['markets', 'execution'] }),
+        ])
 }
 
 export function useCreateLinks() {
@@ -181,5 +189,19 @@ export function useExecution(marketId: string, size: number | null) {
         // While a NEW size loads, keep showing the previous size's table
         // (marked as updating) instead of flashing a loading message.
         placeholderData: keepPreviousData,
+    })
+}
+
+// Manual linking (22.5): look up what the person pasted, only once they
+// press "Look up" (reference stays null until then).
+export function useVenueLookup(venue: Venue, reference: string | null) {
+    return useQuery({
+        queryKey: ['venues', 'lookup', venue, reference] as const,
+        queryFn:
+            reference === null
+                ? skipToken
+                : ({ signal }) => fetchVenueLookup(venue, reference, signal),
+        staleTime: 60_000,
+        retry: false,
     })
 }

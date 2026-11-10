@@ -769,3 +769,30 @@ async def market_execution(
         assumptions=EXECUTION_ASSUMPTIONS,
         venues=venues,
     )
+
+
+# Manual linking (Milestone 22.5): suggestions only cover football, so
+# any other market is linked by pasting the other venue's market.
+MAX_LOOKUP_RESULTS = 12
+
+
+@app.get("/venues/{venue}/lookup")
+async def venue_lookup(
+    venue: Venue,
+    ref: str = Query(min_length=1, max_length=300),
+) -> list[VenueQuote]:
+    """The other venue's market(s) for a pasted link, id, ticker or words.
+
+    Returns quotes with their full rules, so the person can check they
+    have the right market before confirming a link with POST /links.
+    """
+    try:
+        if venue == "polymarket":
+            polymarket: PolymarketClient = app.state.polymarket
+            quotes = [polymarket_quote(raw) for raw in await polymarket.find_markets(ref)]
+        else:
+            kalshi: KalshiClient = app.state.kalshi
+            quotes = [kalshi_quote(raw) for raw in await kalshi.find_markets(ref)]
+    except (PolymarketError, KalshiError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return quotes[:MAX_LOOKUP_RESULTS]

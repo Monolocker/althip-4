@@ -1,52 +1,22 @@
-import { useState } from 'react'
-import { useCreateLinks, useSuggestions } from '../api/queries'
+import { useSuggestions } from '../api/queries'
 import { formatProbability } from '../features/markets/pricing'
-import type { MatchLevel, Suggestion, Venue } from '../types/venue'
-
-const VENUE_NAMES: Record<Venue, string> = {
-  polymarket: 'Polymarket',
-  kalshi: 'Kalshi',
-}
+import { VENUE_NAMES } from '../features/markets/venues'
+import type { Suggestion, Venue } from '../types/venue'
+import LinkConfirmForm from './LinkConfirmForm'
 
 const showPrice = (value: number | null) =>
   value !== null ? formatProbability(value) : '—'
 
 interface SuggestionCardProps {
   suggestion: Suggestion
+  alreadyLinked: boolean
 }
 
 // One venue's candidate match, with everything needed to judge it:
 // the outcome pairs, their prices, and the venue's full rules. Nothing
-// is saved until the person picks a level (and, for "comparable",
-// writes down how the rules differ) and confirms.
-function SuggestionCard({ suggestion }: SuggestionCardProps) {
-  const [level, setLevel] = useState<MatchLevel>('comparable')
-  const [note, setNote] = useState('')
-  const create = useCreateLinks()
+// is saved until the person confirms in LinkConfirmForm.
+function SuggestionCard({ suggestion, alreadyLinked }: SuggestionCardProps) {
   const venue = VENUE_NAMES[suggestion.venue]
-  // Decision 2 (22.2), checked here for a clear message; the backend
-  // and the database enforce it too.
-  const needsNote = level === 'comparable' && note.trim() === ''
-
-  if (create.isSuccess) {
-    return (
-      <div className="suggestion suggestion--done">
-        ✓ Linked {create.data.length} outcomes on {venue}.
-      </div>
-    )
-  }
-
-  function confirm() {
-    create.mutate({
-      venue: suggestion.venue,
-      matchLevel: level,
-      note: note.trim(),
-      links: suggestion.pairs.map((pair) => ({
-        marketId: pair.marketId,
-        externalId: pair.quote.externalId,
-      })),
-    })
-  }
 
   return (
     <div className="suggestion">
@@ -76,81 +46,54 @@ function SuggestionCard({ suggestion }: SuggestionCardProps) {
         </tbody>
       </table>
 
-      {suggestion.unmatched.length > 0 && (
-        <p className="elsewhere-muted">
-          Not linked (no equivalent on {venue}): {suggestion.unmatched.join(', ')}
+      {alreadyLinked ? (
+        // 22.5: no confirm form for a venue this outcome is already
+        // linked to; confirming again could only be refused (409).
+        <p className="suggestion-linked">
+          ✓ Already linked on {venue}. To change it, remove the {venue} link
+          above first.
         </p>
+      ) : (
+        <>
+          {suggestion.unmatched.length > 0 && (
+            <p className="elsewhere-muted">
+              Not linked (no equivalent on {venue}): {suggestion.unmatched.join(', ')}
+            </p>
+          )}
+
+          <details className="suggestion-rules">
+            <summary>{venue}'s rules</summary>
+            <p>{suggestion.rules}</p>
+          </details>
+          <p className="detail-note">
+            Compare them with this market's resolution rules below before
+            confirming: especially what happens if the match is postponed or
+            cancelled.
+          </p>
+
+          <LinkConfirmForm
+            venue={suggestion.venue}
+            links={suggestion.pairs.map((pair) => ({
+              marketId: pair.marketId,
+              externalId: pair.quote.externalId,
+            }))}
+          />
+        </>
       )}
-
-      <details className="suggestion-rules">
-        <summary>{venue}'s rules</summary>
-        <p>{suggestion.rules}</p>
-      </details>
-      <p className="detail-note">
-        Compare them with this market's resolution rules below before
-        confirming: especially what happens if the match is postponed or
-        cancelled.
-      </p>
-
-      <fieldset className="suggestion-level">
-        <legend>How do the rules compare?</legend>
-        <label>
-          <input
-            type="radio"
-            name={`level-${suggestion.venue}`}
-            checked={level === 'comparable'}
-            onChange={() => setLevel('comparable')}
-          />{' '}
-          Comparable: same in the normal case, different at the edges
-        </label>
-        <label>
-          <input
-            type="radio"
-            name={`level-${suggestion.venue}`}
-            checked={level === 'identical'}
-            onChange={() => setLevel('identical')}
-          />{' '}
-          Identical: same payout in every scenario
-        </label>
-      </fieldset>
-
-      <label className="suggestion-note">
-        Note{' '}
-        {level === 'comparable' ? '(required: how do the rules differ?)' : '(optional)'}
-        <textarea
-          value={note}
-          onChange={(event) => setNote(event.target.value)}
-          rows={2}
-          placeholder="e.g. Cancelled match: Hyperliquid's Draw resolves Yes; this venue resolves No."
-        />
-      </label>
-
-      {create.isError && (
-        <p className="detail-note detail-note--error">{create.error.message}</p>
-      )}
-
-      <button
-        type="button"
-        className="suggestion-confirm"
-        disabled={needsNote || create.isPending}
-        onClick={confirm}
-      >
-        {create.isPending
-          ? 'Confirming…'
-          : `Confirm ${suggestion.pairs.length} links on ${venue}`}
-      </button>
     </div>
   )
 }
 
 interface SuggestionsPanelProps {
   questionId: string
+  // Venues this outcome already has a confirmed link to.
+  linkedVenues: Venue[]
   onClose: () => void
 }
 
 // "Find on other venues" (Milestone 22.3b): candidate matches for this
 // football question, searched once on demand.
-function SuggestionsPanel({ questionId, onClose }: SuggestionsPanelProps) {
+function SuggestionsPanel({ questionId, linkedVenues, onClose }: SuggestionsPanelProps) {
   const suggestions = useSuggestions(questionId, true)
 
   let body
@@ -174,7 +117,11 @@ function SuggestionsPanel({ questionId, onClose }: SuggestionsPanelProps) {
     body = <p className="detail-note">No matching event found on Polymarket or Kalshi.</p>
   } else {
     body = suggestions.data.map((suggestion) => (
-      <SuggestionCard key={suggestion.venue} suggestion={suggestion} />
+      <SuggestionCard
+        key={suggestion.venue}
+        suggestion={suggestion}
+        alreadyLinked={linkedVenues.includes(suggestion.venue)}
+      />
     ))
   }
 

@@ -14,6 +14,7 @@ Observed in the 22 probes (Nov 2026):
 
 import json
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from typing import Any
 
 import httpx
@@ -71,6 +72,49 @@ class PolymarketClient:
         data = response.json()
         events = data.get("events") if isinstance(data, dict) else None
         return events if isinstance(events, list) else []
+    
+    async def find_markets(self, reference: str) -> list[dict[str, Any]]:
+        """Markets matching what a person pasted (Milestone 22.5): a
+        numeric id, a polymarket.com link, a slug, or plain words.
+
+        Tried in order, stopping at the first that finds something:
+        exact id -> market slug -> event slug (all its markets) -> the
+        fuzzy public search (open events only).
+        """
+        ref = reference.strip()
+        if ref.isdigit():
+            market = await self.fetch_market(ref)
+            return [market] if market is not None else []
+
+        slug = reference_slug(ref)
+        if slug is not None:
+            markets = await self._get_list(f"{GAMMA_URL}/markets", {"slug": slug})
+            if markets:
+                return markets
+            events = await self._get_list(f"{GAMMA_URL}/events", {"slug": slug})
+            nested = [m for e in events for m in (e.get("markets") or []) if isinstance(m, dict)]
+            if nested:
+                return nested
+
+        events = await self.search_events(ref)
+        return [
+            m
+            for e in events
+            if not e.get("closed")
+            for m in (e.get("markets") or [])
+            if isinstance(m, dict)
+        ]
+
+    async def _get_list(self, url: str, params: dict[str, str]) -> list[dict[str, Any]]:
+        """GET a Gamma list endpoint; anything but a 200 list is "none"."""
+        try:
+            response = await self._http.get(url, params=params, timeout=REQUEST_TIMEOUT)
+        except httpx.HTTPError as exc:
+            raise PolymarketError(f"Polymarket request failed: {exc}") from exc
+        if response.status_code != 200:
+            return []
+        data = response.json()
+        return [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
 
 
     async def fetch_book(self, token_id: str) -> dict[str, Any]:
@@ -94,6 +138,18 @@ class PolymarketClient:
         if not isinstance(data, dict):
             raise PolymarketError(f"Unexpected book shape: {type(data).__name__}")
         return data
+
+def reference_slug(reference: str) -> str | None:
+    """The slug inside a pasted reference, or None for plain words.
+
+    "https://polymarket.com/event/some-event/some-market?tid=1" ->
+    "some-market"; "some-market" -> "some-market"; "Fed December" -> None.
+    """
+    if "/" in reference:
+        parsed = urlparse(reference if "://" in reference else f"https://{reference}")
+        segments = [segment for segment in parsed.path.split("/") if segment]
+        return segments[-1] if segments else None
+    return None if " " in reference else reference
 
 
 def yes_token_id(raw_market: dict[str, Any]) -> str | None:

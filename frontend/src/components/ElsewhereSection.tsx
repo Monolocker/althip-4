@@ -5,15 +5,12 @@ import {
   formatProbability,
   pricesAreProbabilities,
 } from '../features/markets/pricing'
+import { VENUE_NAMES } from '../features/markets/venues'
 import type { OutcomeMarket } from '../types/market'
-import type { ElsewhereEntry, Venue, VenueQuote } from '../types/venue'
+import type { ElsewhereEntry, VenueQuote } from '../types/venue'
 import { formatPrice, formatTime } from '../utils/format'
+import ManualLinkPanel from './ManualLinkPanel'
 import SuggestionsPanel from './SuggestionsPanel'
-
-const VENUE_NAMES: Record<Venue, string> = {
-  polymarket: 'Polymarket',
-  kalshi: 'Kalshi',
-}
 
 // A quote's single reference price: the middle of its bid and ask when
 // both exist (comparable with our mid), else the venue's own price.
@@ -25,7 +22,8 @@ function quoteMid(quote: VenueQuote): number | null {
 }
 
 // Suggestions cover Hyperliquid's football match questions only
-// (22.2, decision 3): "Competition: Team A v Team B".
+// (22.2, decision 3): "Competition: Team A v Team B". Every other
+// market is linked by hand (22.5).
 function canSuggest(market: OutcomeMarket): boolean {
   return (
     market.parent !== null &&
@@ -114,20 +112,25 @@ function ElsewhereRow({ entry, ourPrice, formatValue }: EntryProps) {
   )
 }
 
+// Which linking panel is open under the list, if any.
+type OpenPanel = 'none' | 'suggestions' | 'manual'
+
 interface ElsewhereSectionProps {
   market: OutcomeMarket
 }
 
 // Confirmed links to the same event on other venues, with live prices
-// (22.3a), plus finding, confirming and removing links (22.3b). Hidden
-// for markets that have no links and cannot get suggestions.
+// (22.3a), plus two ways to create them: suggestions for football
+// matches (22.3b) and manual linking for everything else (22.5).
 function ElsewhereSection({ market }: ElsewhereSectionProps) {
   const elsewhere = useElsewhere(market.id)
-  const [searching, setSearching] = useState(false)
-  const suggestable = canSuggest(market)
+  const [panel, setPanel] = useState<OpenPanel>('none')
   const entries = elsewhere.data ?? []
+  const isOpen = market.status === 'open'
 
-  if (!suggestable && entries.length === 0) {
+  // A settled market cannot gain links; show the section only if it
+  // already has some.
+  if (!isOpen && entries.length === 0) {
     return null
   }
 
@@ -136,19 +139,31 @@ function ElsewhereSection({ market }: ElsewhereSectionProps) {
   const formatValue = pricesAreProbabilities(market)
     ? formatProbability
     : formatPrice
+  const linkedVenues = entries.map((entry) => entry.link.venue)
 
   return (
     <section className="detail-section">
       <div className="section-heading">
         <h3>Elsewhere</h3>
-        {suggestable && !searching && (
-          <button
-            type="button"
-            className="side-toggle-button"
-            onClick={() => setSearching(true)}
-          >
-            Find on other venues
-          </button>
+        {isOpen && panel === 'none' && (
+          <div className="side-toggle">
+            {canSuggest(market) && (
+              <button
+                type="button"
+                className="side-toggle-button"
+                onClick={() => setPanel('suggestions')}
+              >
+                Find on other venues
+              </button>
+            )}
+            <button
+              type="button"
+              className="side-toggle-button"
+              onClick={() => setPanel('manual')}
+            >
+              Link manually
+            </button>
+          </div>
         )}
       </div>
 
@@ -173,10 +188,19 @@ function ElsewhereSection({ market }: ElsewhereSectionProps) {
         <p className="detail-note">No linked markets on other venues yet.</p>
       )}
 
-      {searching && market.parent !== null && (
+      {panel === 'suggestions' && market.parent !== null && (
         <SuggestionsPanel
           questionId={market.parent.id}
-          onClose={() => setSearching(false)}
+          linkedVenues={linkedVenues}
+          onClose={() => setPanel('none')}
+        />
+      )}
+      {panel === 'manual' && (
+        <ManualLinkPanel
+          marketId={market.id}
+          outcomeLabel={market.parent?.outcomeLabel ?? market.question}
+          linkedVenues={linkedVenues}
+          onClose={() => setPanel('none')}
         />
       )}
     </section>

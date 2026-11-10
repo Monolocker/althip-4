@@ -63,6 +63,41 @@ class KalshiClient:
         if not isinstance(series, list):
             raise KalshiError("Unexpected series shape: no 'series' list")
         return series
+    
+    async def find_markets(self, reference: str) -> list[dict[str, Any]]:
+        """Markets matching what a person pasted (Milestone 22.5): a
+        market ticker, an event ticker, or a kalshi.com link (whose last
+        part is an event ticker).
+
+        A market ticker gives that one market; an event ticker gives
+        every market of the event, for the person to choose from.
+        """
+        ticker = reference_ticker(reference)
+        if ticker is None:
+            return []
+        try:
+            market = await self.fetch_market(ticker)
+        except KalshiError:
+            market = None  # not a market ticker; maybe an event ticker
+        if market is not None:
+            return [market]
+
+        try:
+            response = await self._http.get(
+                f"{KALSHI_URL}/events/{ticker}",
+                params={"with_nested_markets": "true"},
+                timeout=REQUEST_TIMEOUT,
+            )
+        except httpx.HTTPError as exc:
+            raise KalshiError(f"Kalshi request failed: {exc}") from exc
+        if response.status_code != 200:
+            return []
+        data = response.json()
+        if not isinstance(data, dict):
+            return []
+        event = data.get("event") if isinstance(data.get("event"), dict) else {}
+        markets = event.get("markets") or data.get("markets") or []
+        return [m for m in markets if isinstance(m, dict)]
 
     async def fetch_open_events(self, series_ticker: str) -> list[dict[str, Any]]:
         """Open events of one series, each with its markets nested inside."""
@@ -119,6 +154,16 @@ class KalshiClient:
         if response.status_code != 200:
             raise KalshiError(f"Kalshi returned HTTP {response.status_code}")
         return response.json()
+
+def reference_ticker(reference: str) -> str | None:
+    """The ticker inside a pasted reference, upper-cased.
+
+    "https://kalshi.com/markets/kxuclgame/x/kxuclgame-26nov04aekrma" ->
+    "KXUCLGAME-26NOV04AEKRMA"; "kxfed-26dec-t4.00" -> "KXFED-26DEC-T4.00".
+    """
+    text = reference.strip().split("?")[0].rstrip("/")
+    last = text.split("/")[-1].strip().upper()
+    return last if last and " " not in last else None
 
 
 def _side(price: Any, size: Any) -> float | None:
