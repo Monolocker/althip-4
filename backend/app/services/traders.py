@@ -44,6 +44,14 @@ CREATE TABLE IF NOT EXISTS trader_fills (
 
 -- The leaderboard (23.3) sums fills by time window.
 CREATE INDEX IF NOT EXISTS trader_fills_by_time ON trader_fills (time);
+
+-- Named one-time data migrations (23.2b), recorded so each runs once.
+-- A table rather than PRAGMA user_version: this SQLite file is shared
+-- by several stores, and names cannot collide the way one number can.
+CREATE TABLE IF NOT EXISTS migrations (
+    name       TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL
+);
 """
 
 # Columns added to `traders` in 23.2. CREATE TABLE IF NOT EXISTS never
@@ -54,6 +62,7 @@ TRADER_COLUMNS_23_2 = {
     # Earliest time from which this trader's fills are complete. Later
     # than the 30-day backfill start when Hyperliquid no longer served
     # their older fills (only the most recent ones are available).
+    # NULL = unknown: the trader needs a (re)backfill (23.2b).
     "coverage_from": "INTEGER",
     # When the collector last fetched this trader (ISO, UTC).
     "fills_checked_at": "TEXT",
@@ -73,18 +82,39 @@ INSERT OR IGNORE INTO trader_fills (
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 
-# Traders whose fills need fetching: never fetched, traded since the
-# last fetch, or not checked for a while (positions can SETTLE without
-# the trader trading, and settlement is not in the trade stream).
-# Never-fetched first, then the most active.
-DUE_TRADERS = """
-SELECT address, fills_through FROM traders
-WHERE fills_through IS NULL
-   OR last_trade_at > fills_through
-   OR fills_checked_at IS NULL
-   OR fills_checked_at < :stale_before
-ORDER BY fills_through IS NOT NULL, trades_seen DESC
+# 23.2b repair: fills collected before the 23.2b fix may have silent
+# gaps (a full page of perp/spot fills stored nothing and was taken as
+# "already stored"). Those gaps cannot be detected, so every trader's
+# coverage becomes unknown, which queues a fresh backfill for each.
+# Stored fills are kept: re-fetched ones are ignored as duplicates.
+REPAIR_23_2B = "23.2b-rebackfill-all"
+
+# Traders whose fills need fetching: coverage unknown (never fetched, or
+# reset by a repair), traded since the last fetch, or not checked for a
+# while (positions can SETTLE without the trader trading, and settlement
+# is not in the trade stream).
+DUE_CONDITION = """
+    coverage_from IS NULL
+    OR fills_through IS NULL
+    OR last_trade_at > fills_through
+    OR fills_checked_at IS NULL
+    OR fills_checked_at < :stale_before
+"""
+
+# Fair order (23.2b): never checked first, then the least recently
+# checked, so every due trader is reached within one cycle. Ordering by
+# activity starved everyone below the batch limit (23.3, section J).
+DUE_TRADERS = f"""
+SELECT address, fills_through, coverage_from FROM traders
+WHERE {DUE_CONDITION}
+ORDER BY fills_checked_at IS NOT NULL, fills_checked_at
 LIMIT :limit
+"""
+
+# For /health: the real queue length, and how many still need a backfill.
+QUEUE_COUNTS = f"""
+SELECT COUNT(*), COALESCE(SUM(coverage_from IS NULL), 0)
+FROM traders WHERE {DUE_CONDITION}
 """
 
 # Leaderboard (23.3). Evidence from the 23.3a probe:
@@ -158,6 +188,17 @@ class TraderStore:
                 if column not in existing:
                     connection.execute(f"ALTER TABLE traders ADD COLUMN {column} {declaration}")
             connection.commit()
+            # The repair and its record commit together, or not at all.
+            with connection:
+                applied = connection.execute(
+                    "SELECT 1 FROM migrations WHERE name = ?", (REPAIR_23_2B,)
+                ).fetchone()
+                if applied is None:
+                    connection.execute("UPDATE traders SET coverage_from = NULL")
+                    connection.execute(
+                        "INSERT INTO migrations (name, applied_at) VALUES (?, ?)",
+                        (REPAIR_23_2B, datetime.now(timezone.utc).isoformat()),
+                    )
 
     def record(self, activity: dict[str, tuple[int, int]]) -> None:
         """Save a batch: address -> (latest trade time ms, trades in batch)."""
@@ -172,11 +213,22 @@ class TraderStore:
         with closing(self._connect()) as connection:
             return connection.execute("SELECT COUNT(*) FROM traders").fetchone()[0]
 
-    def due_traders(self, stale_before: datetime, limit: int) -> list[tuple[str, int | None]]:
+    def due_traders(
+        self, stale_before: datetime, limit: int
+    ) -> list[tuple[str, int | None, int | None]]:
+        """(address, fills_through, coverage_from) of the next traders to fetch."""
         with closing(self._connect()) as connection:
             return connection.execute(
                 DUE_TRADERS, {"stale_before": stale_before.isoformat(), "limit": limit}
             ).fetchall()
+
+    def queue_counts(self, stale_before: datetime) -> tuple[int, int]:
+        """(traders due, of which needing a backfill)."""
+        with closing(self._connect()) as connection:
+            due, backfill = connection.execute(
+                QUEUE_COUNTS, {"stale_before": stale_before.isoformat()}
+            ).fetchone()
+            return due, backfill
 
     def save_fills(self, address: str, fills: list[dict[str, Any]]) -> int:
         """Store a page of fills (outcome coins only); returns rows added."""
@@ -202,15 +254,24 @@ class TraderStore:
             return connection.total_changes - before
 
     def mark_collected(
-        self, address: str, fills_through: int, coverage_from: int | None
+        self, address: str, fills_through: int | None, coverage_from: int | None
     ) -> None:
-        """Record a finished fetch. coverage_from is only ever set once:
-        the first (backfill) fetch decides how far back we are complete."""
+        """Record a fetch: both values are written as given (the collector
+        decides them), and the trader moves to the back of the queue."""
         with closing(self._connect()) as connection, connection:
             connection.execute(
-                "UPDATE traders SET fills_through = ?, fills_checked_at = ?, "
-                "coverage_from = COALESCE(coverage_from, ?) WHERE address = ?",
-                (fills_through, datetime.now(timezone.utc).isoformat(), coverage_from, address),
+                "UPDATE traders SET fills_through = ?, coverage_from = ?, "
+                "fills_checked_at = ? WHERE address = ?",
+                (fills_through, coverage_from, datetime.now(timezone.utc).isoformat(), address),
+            )
+
+    def mark_checked(self, address: str) -> None:
+        """A failed fetch: change nothing but the queue position, so a
+        trader that keeps failing cannot block the others."""
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                "UPDATE traders SET fills_checked_at = ? WHERE address = ?",
+                (datetime.now(timezone.utc).isoformat(), address),
             )
 
     def fill_count(self) -> int:

@@ -336,6 +336,8 @@ class FillCollectStatus(BaseModel):
     weight_per_minute: int = Field(alias="weightPerMinute")
     traders_collected: int = Field(alias="tradersCollected")
     traders_due: int = Field(alias="tradersDue")
+    needs_backfill: int = Field(alias="needsBackfill")  # coverage unknown (23.2b)
+    largest_pass_fills: int = Field(alias="largestPassFills")   # served-cap check
     fills_stored: int = Field(alias="fillsStored")
     last_fetch_at: datetime | None = Field(alias="lastFetchAt")
 
@@ -397,6 +399,8 @@ async def health() -> HealthResponse:
             weight_per_minute=LEADERBOARD_WEIGHT_PER_MINUTE,
             traders_collected=collector.traders_collected,
             traders_due=collector.due,
+            needs_backfill=collector.needs_backfill,
+            largest_pass_fills=collector.largest_pass_fills,
             fills_stored=collector.fills_stored,
             last_fetch_at=(
                 datetime.fromtimestamp(collector.last_fetch_at, tz=timezone.utc)
