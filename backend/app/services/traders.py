@@ -9,6 +9,7 @@ recorder.
 
 import sqlite3
 from contextlib import closing
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -86,12 +87,58 @@ ORDER BY fills_through IS NOT NULL, trades_seen DESC
 LIMIT :limit
 """
 
+# Leaderboard (23.3). Evidence from the 23.3a probe:
+#   - every stored fee is USDC (1,875,783 of 1,875,783 fills), so
+#     closed_pnl - fee is a valid USDC subtraction;
+#   - Merge/Split Outcome fills always carry px 0.5 (a fixed conversion
+#     value, not a traded price), so volume counts Buy / Sell only;
+#   - settlements are px 1 (won, all PnL > 0) or px 0 (lost, all PnL < 0),
+#     apart from rare fractional payouts (2 fills at px 0.5).
+# Only FETCHED traders are ranked: fills_through IS NULL means the first
+# fetch has not finished, so their stored fills may be half a backfill.
+TRADER_SUMMARY = """
+SELECT COUNT(*), COALESCE(SUM(fills_through IS NULL), 0), MIN(coverage_from)
+FROM traders
+"""
+
+LEADERBOARD = """
+WITH f AS (
+    SELECT address,
+        SUM(closed_pnl) AS gross_pnl,
+        SUM(CASE WHEN dir IN ('Buy', 'Sell') THEN closed_pnl ELSE 0 END) AS trading_pnl,
+        SUM(CASE WHEN dir = 'Settlement' THEN closed_pnl ELSE 0 END) AS settlement_pnl,
+        SUM(fee) AS fees,
+        SUM(CASE WHEN dir IN ('Buy', 'Sell') THEN px * sz ELSE 0 END) AS volume,
+        COUNT(*) AS fills,
+        -- coin "#{10*N+s}": outcome N is the number divided by 10
+        COUNT(DISTINCT CAST(substr(coin, 2) AS INTEGER) / 10) AS markets,
+        SUM(dir = 'Settlement' AND px = 1) AS won,
+        SUM(dir = 'Settlement' AND px = 0) AS lost,
+        SUM(dir = 'Settlement' AND px > 0 AND px < 1) AS fractional
+    FROM trader_fills
+    WHERE time >= :start
+    GROUP BY address
+)
+SELECT f.*, t.coverage_from, t.fills_through, t.last_trade_at
+FROM f JOIN traders t USING (address)
+WHERE t.fills_through IS NOT NULL
+"""
+
 
 def _float(value: Any) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+@dataclass(frozen=True)
+class LeaderboardData:
+    start_ms: int | None  # window start used; None when nothing is tracked yet
+    tracking_since: int | None  # earliest coverage_from of any trader
+    traders_known: int
+    traders_pending: int  # discovered but never fetched
+    rows: list[dict[str, Any]]  # one per fetched trader with fills in the window
 
 
 class TraderStore:
@@ -169,3 +216,19 @@ class TraderStore:
     def fill_count(self) -> int:
         with closing(self._connect()) as connection:
             return connection.execute("SELECT COUNT(*) FROM trader_fills").fetchone()[0]
+
+    def leaderboard(self, start_ms: int | None) -> LeaderboardData:
+        """Per-trader totals for fills at or after start_ms.
+
+        start_ms None = All-Time, which starts at tracking_since.
+        """
+        with closing(self._connect()) as connection:
+            connection.row_factory = sqlite3.Row
+            known, pending, since = connection.execute(TRADER_SUMMARY).fetchone()
+            start = start_ms if start_ms is not None else since
+            rows = (
+                [dict(row) for row in connection.execute(LEADERBOARD, {"start": start})]
+                if start is not None
+                else []
+            )
+        return LeaderboardData(start, since, known, pending, rows)

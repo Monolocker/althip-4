@@ -18,6 +18,7 @@ from app.models.deployers import DeployerStats
 from app.models.book import OrderBook
 from app.models.candle import CandleRange, PriceHistory
 from app.models.costs import ExecutionEstimate, VenueCost
+from app.models.leaderboard import Leaderboard, LeaderboardSort, LeaderboardWindow
 from app.models.market import OutcomeMarket, OutcomeMarketDetail
 from app.models.venue import (
     ElsewhereEntry,
@@ -42,6 +43,7 @@ from app.services.polymarket import (
 from app.services.suggestions import SuggestionFinder
 from app.services.fill_collector import LEADERBOARD_WEIGHT_PER_MINUTE, FillCollector
 from app.services.trade_watcher import TradeWatcher
+from app.services.leaderboard import WindowResult, build_leaderboard, compute_window
 from app.services.traders import TraderStore
 from app.services.sweep import BookSweeper
 from app.services.hyperliquid import HyperliquidClient, HyperliquidError
@@ -160,6 +162,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.books = {}    
     # (coin, range) -> (fetched_at_monotonic, PriceHistory)
     app.state.candles = {}
+    # window -> (computed_at_monotonic, WindowResult)
+    app.state.leaderboard = {}
 
 
     # Background book sweep (Milestone 18.3b). create_task starts it
@@ -863,3 +867,34 @@ async def venue_lookup(
     except (PolymarketError, KalshiError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return quotes[:MAX_LOOKUP_RESULTS]
+
+# ---------------------------------------------------------------
+# Trader leaderboard (Milestone 23.3)
+# ---------------------------------------------------------------
+# 23.3a probe: one window's aggregation scans every stored fill (about
+# 300 ms at 1.9M fills, and the table keeps growing). So each window is
+# computed at most once per TTL, off the event loop, and every sort and
+# limit is served from that one result.
+LEADERBOARD_TTL_SECONDS = 60.0
+
+
+@app.get("/leaderboard")
+async def leaderboard(
+    window: LeaderboardWindow = "30d",
+    sort: LeaderboardSort = "pnl",
+    limit: int = Query(default=100, ge=1, le=500),
+) -> Leaderboard:
+    """Traders ranked by realized PnL net of fees (or volume, fills).
+
+    Only traders this app has discovered and fetched are ranked; each
+    row says whether its history covers the whole window.
+    """
+    cache: dict[str, tuple[float, WindowResult]] = app.state.leaderboard
+    cached = cache.get(window)
+    if cached is not None and time.monotonic() - cached[0] < LEADERBOARD_TTL_SECONDS:
+        result = cached[1]
+    else:
+        store: TraderStore = app.state.trader_store
+        result = await asyncio.to_thread(compute_window, store, window)
+        cache[window] = (time.monotonic(), result)
+    return build_leaderboard(result, window, sort, limit)
