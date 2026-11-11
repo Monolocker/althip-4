@@ -6,10 +6,12 @@ import {
 } from '@tanstack/react-query'
 import { keepPreviousData } from '@tanstack/react-query'
 import type { CandleRange } from '../types/candle'
+import type { LeaderboardSort, LeaderboardWindow } from '../types/leaderboard'
 import type { Venue } from '../types/venue'
 import {
     ApiError,
     fetchDeployers,
+    fetchLeaderboard,
     createLinks,
     deleteLink,
     fetchElsewhere,
@@ -104,6 +106,26 @@ export function useDeployers() {
     })
 }
 
+// The trader leaderboard (Milestone 23.4). The backend recomputes each
+// window at most once a minute (LEADERBOARD_TTL_SECONDS), so polling
+// faster would only return copies. The sidebar panel and the table call
+// this hook with the same key, so they share ONE request and one cache
+// entry; each (window, sort) pair is its own entry, so switching back is
+// instant.
+const LEADERBOARD_MS = 60_000
+const LEADERBOARD_LIMIT = 100
+
+export function useLeaderboard(timeWindow: LeaderboardWindow, sort: LeaderboardSort) {
+    return useQuery({
+        queryKey: ['leaderboard', timeWindow, sort] as const,
+        queryFn: ({ signal }) => fetchLeaderboard(timeWindow, sort, LEADERBOARD_LIMIT, signal),
+        staleTime: LEADERBOARD_MS,
+        refetchInterval: LEADERBOARD_MS,
+        // While a new window or ranking loads, keep showing the previous
+        // one (dimmed) instead of flashing a loading message.
+        placeholderData: keepPreviousData,
+    })
+}
 
 // Linked markets on other venues (Milestone 22.3). The backend caches
 // each external quote for 30 s (decision 5), so polling faster would

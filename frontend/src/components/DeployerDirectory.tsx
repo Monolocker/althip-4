@@ -1,12 +1,8 @@
 import { useDeployers } from '../api/queries'
 import { venueLabel } from '../features/markets/discovery'
 import type { DeployerStats, QualityCounts } from '../types/deployer'
-import { formatTime, formatVolume } from '../utils/format'
+import { formatTime, formatVolume, shortAddress } from '../utils/format'
 
-// "0x0c46eb73fae2816f219fcf11f50d6d3c59b5819e" -> "0x0c46…819e"
-function shortAddress(address: string): string {
-  return `${address.slice(0, 6)}…${address.slice(-4)}`
-}
 
 const QUALITY_SEGMENTS: { key: keyof QualityCounts; label: string }[] = [
   { key: 'tight', label: 'tight' },

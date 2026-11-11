@@ -1,8 +1,9 @@
-export type SidebarView = 'markets' | 'deployers'
+export type SidebarView = 'markets' | 'deployers' | 'leaderboard'
 
 const VIEWS: { value: SidebarView; label: string }[] = [
   { value: 'markets', label: 'Markets' },
   { value: 'deployers', label: 'Deployers' },
+  { value: 'leaderboard', label: 'Leaderboard' },
 ]
 
 interface SidebarViewSwitchProps {
@@ -10,7 +11,7 @@ interface SidebarViewSwitchProps {
   onChange: (view: SidebarView) => void
 }
 
-// Markets | Deployers switch at the top of the sidebar (Milestone 20.1b).
+// Markets | Deployers | Leaderboard switch at the top of the sidebar (Milestone 20.1b; Leaderboard added in 23.4).
 function SidebarViewSwitch({ value, onChange }: SidebarViewSwitchProps) {
   return (
     <div className="sidebar-view-switch side-toggle" role="group" aria-label="Sidebar view">

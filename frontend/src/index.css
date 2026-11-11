@@ -1368,3 +1368,179 @@ button {
 .lookup-result--chosen {
   border-color: #1a1a1a;
 }
+
+
+
+/* Milestone 23.4: trader leaderboard */
+
+.leaderboard-group {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.9rem;
+}
+
+.leaderboard-group-label {
+  color: #555;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.leaderboard-group .side-toggle {
+  flex-wrap: wrap;
+}
+
+.leaderboard-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.3rem 0.75rem;
+  margin: 1rem 0;
+  font-size: 0.85rem;
+}
+
+.leaderboard-summary dt {
+  color: #767676;
+}
+
+.leaderboard-summary dd {
+  margin: 0;
+}
+
+.leaderboard-muted {
+  color: #767676;
+}
+
+.leaderboard-notes {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: #767676;
+  font-size: 0.8rem;
+}
+
+.leaderboard-subtitle {
+  margin-top: 0.5rem;
+}
+
+.leaderboard-table {
+  margin-top: 1rem;
+  overflow-x: auto;
+  transition: opacity 0.15s;
+}
+
+.leaderboard-table--updating {
+  opacity: 0.55;
+}
+
+.leaderboard-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderboard-table th,
+.leaderboard-table td {
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid #eee;
+}
+
+.leaderboard-table th {
+  border-bottom-color: #ddd;
+  color: #555;
+  font-weight: 600;
+}
+
+.leaderboard-table .leaderboard-num {
+  text-align: right;
+}
+
+.leaderboard-row--open td {
+  background: #fafafa;
+  border-bottom: none;
+}
+
+.leaderboard-detail-row td {
+  background: #fafafa;
+  white-space: normal;
+}
+
+.leaderboard-details p {
+  margin: 0.2rem 0;
+  color: #555;
+  font-size: 0.8rem;
+}
+
+.pnl {
+  font-weight: 600;
+}
+
+.pnl--up {
+  color: #2e7d44;
+}
+
+.pnl--down {
+  color: #b33a3a;
+}
+
+.trader-address {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.trader-address code {
+  font-size: 0.85rem;
+}
+
+.trader-address-button {
+  padding: 0.1rem 0.45rem;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.trader-address-link {
+  color: #555;
+  font-size: 0.75rem;
+}
+
+.history-badges {
+  display: inline-flex;
+  gap: 0.3rem;
+}
+
+.history-badge {
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: help;
+}
+
+.history-badge--partial {
+  background: #fff4d6;
+  color: #7a5b00;
+}
+
+.history-badge--checking {
+  background: #eef0f5;
+  color: #4a5068;
+}
+
+.history-badge--behind {
+  background: #e8f1fb;
+  color: #2a5885;
+}
+
+/* Text for screen readers only (an icon-less column needs a name). */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

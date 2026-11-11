@@ -1,6 +1,7 @@
 import type { OrderBook } from '../types/book'
 import type { CandleRange, PriceHistory } from '../types/candle'
 import type { DeployerStats } from '../types/deployer'
+import type { Leaderboard, LeaderboardSort, LeaderboardWindow } from '../types/leaderboard'
 import type { ExecutionEstimate } from '../types/execution'
 import type {
   OutcomeMarket,
@@ -157,6 +158,20 @@ export async function fetchDeployers(
   signal?: AbortSignal,
 ): Promise<DeployerStats[]> {
   return requestJson<DeployerStats[]>('/deployers', 'deployers', signal)
+}
+
+// Trader leaderboard (Milestone 23.4).
+export async function fetchLeaderboard(
+  timeWindow: LeaderboardWindow,
+  sort: LeaderboardSort,
+  limit: number,
+  signal?: AbortSignal,
+): Promise<Leaderboard> {
+  return requestJson<Leaderboard>(
+    `/leaderboard?window=${timeWindow}&sort=${sort}&limit=${limit}`,
+    'leaderboard',
+    signal,
+  )
 }
 
 export async function fetchPriceHistory(

@@ -83,3 +83,36 @@ export function formatTime(value: string | null): DisplayTime | null {
     local: localFormatter.format(date),
   }
 }
+
+// "0x0c46eb73fae2816f219fcf11f50d6d3c59b5819e" -> "0x0c46…819e"
+// (Moved here from DeployerDirectory in 23.4: the leaderboard uses it too.)
+export function shortAddress(address: string): string {
+  return `${address.slice(0, 6)}…${address.slice(-4)}`
+}
+
+// Signed USDC with cents: "+$7,207.83", "-$342.98", "$0.00". Unlike
+// compact volume, PnL is money gained or lost, so cents are kept.
+// "exceptZero" applies the sign after rounding, so -0.004 shows "$0.00".
+const signedUsd = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  signDisplay: "exceptZero",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+export function formatUsd(value: number): string {
+  return signedUsd.format(value)
+}
+
+// "Oct 24" in UTC, for compact labels; full times go in tooltips.
+const shortUtcDate = new Intl.DateTimeFormat("en-US", {
+  timeZone: "UTC",
+  month: "short",
+  day: "numeric",
+})
+
+export function formatShortDate(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : shortUtcDate.format(date)
+}

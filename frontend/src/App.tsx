@@ -4,6 +4,8 @@ import ActiveFilters, { type ActiveFilter } from "./components/ActiveFilters"
 import ChipFilter from "./components/ChipFilter"
 import CloseBucketFilter from "./components/CloseBucketFilter"
 import DeployerDirectory from "./components/DeployerDirectory"
+import LeaderboardPanel from "./components/LeaderboardPanel"
+import LeaderboardTable from "./components/LeaderboardTable"
 import MarketDetail from "./components/MarketDetail"
 import MarketList from "./components/MarketList"
 import MarketSearch from "./components/MarketSearch"
@@ -30,6 +32,7 @@ import {
 } from "./features/markets/discovery"
 import { groupEntries } from "./features/markets/grouping"
 import { useNow } from "./hooks/useNow"
+import type { LeaderboardSort, LeaderboardWindow } from "./types/leaderboard"
 
 // Bucket boundaries are hours and days apart; re-evaluating them once
 // a minute is far more precise than they need.
@@ -46,7 +49,13 @@ function App() {
   const [sidebarView, setSidebarView] = useState<SidebarView>("markets")
   // null = all categories.
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
-
+  // Leaderboard kept here, not inside the view, b/c sidebar and workspace 
+  // table both need it
+  const [leaderboardWindow, setLeaderboardWindow] = 
+    useState<LeaderboardWindow>("7d")
+  const [leaderboardSort, setLeaderboardSort] = 
+    useState<LeaderboardSort>("pnl")
+ 
   const now = useNow(CLOCK_TICK_MS)
   const marketsQuery = useMarkets()
   const detailQuery = useMarketDetail(selectedMarketId)
@@ -184,8 +193,16 @@ function App() {
       <div className="terminal-layout">
         <aside className="market-sidebar">
           <SidebarViewSwitch value={sidebarView} onChange={setSidebarView} />
+
+          {sidebarView === "leaderboard" ? (
+            <LeaderboardPanel
+              timeWindow={leaderboardWindow}
+              sort={leaderboardSort}
+              onWindowChange={setLeaderboardWindow}
+              onSortChange={setLeaderboardSort}
+            />
           
-          {sidebarView === "deployers" ? (
+          ) : sidebarView === "deployers" ? (
             <DeployerDirectory
               activeVenue={venueFilter}
               onSelectVenue={handleSelectVenue}
@@ -245,7 +262,12 @@ function App() {
         </aside>
 
         <section className="market-workspace">
-          {selectedMarket !== null ? (
+          {sidebarView === "leaderboard" ? (
+            <LeaderboardTable 
+              timeWindow={leaderboardWindow}
+              sort={leaderboardSort}
+            />
+          ) : selectedMarket !== null ? (
             <MarketDetail
               market={selectedMarket}
               detail={detail}
