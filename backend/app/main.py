@@ -40,6 +40,7 @@ from app.services.polymarket import (
     yes_token_id,
 )
 from app.services.suggestions import SuggestionFinder
+from app.services.fill_collector import LEADERBOARD_WEIGHT_PER_MINUTE, FillCollector
 from app.services.trade_watcher import TradeWatcher
 from app.services.traders import TraderStore
 from app.services.sweep import BookSweeper
@@ -182,15 +183,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await asyncio.to_thread(app.state.trader_store.initialize)
     app.state.trade_watcher = TradeWatcher(app.state.trader_store, outcome_coins_by_volume)
     watch_task = asyncio.create_task(app.state.trade_watcher.run_forever())
-
+    # Outcome fills within a fixed REST budget 
+    app.state.fill_collector = FillCollector(
+        app.state.trader_store, app.state.hyperliquid.fetch_user_fills_by_time
+    )
+    collect_task = asyncio.create_task(app.state.fill_collector.run_forever())
 
     yield
 
     # Shutdown order matters: stop the background tasks before closing the HTTP
     # client they use, then wait for the cancellations.
-    for task in (watch_task, record_task, sweep_task):
+    for task in (collect_task, watch_task, record_task, sweep_task):
         task.cancel()
-    for task in (watch_task, record_task, sweep_task):
+    for task in (collect_task, watch_task, record_task, sweep_task):
         with contextlib.suppress(asyncio.CancelledError):
             await task
     await app.state.http.aclose()
@@ -319,6 +324,17 @@ class TradeWatchStatus(BaseModel):
     traders_known: int = Field(alias="tradersKnown")
     last_trade_at: datetime | None = Field(alias="lastTradeAt")
 
+class FillCollectStatus(BaseModel):
+    """Progress of the trader fill collector (23.2)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    weight_per_minute: int = Field(alias="weightPerMinute")
+    traders_collected: int = Field(alias="tradersCollected")
+    traders_due: int = Field(alias="tradersDue")
+    fills_stored: int = Field(alias="fillsStored")
+    last_fetch_at: datetime | None = Field(alias="lastFetchAt")
+
 class HealthResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -326,6 +342,7 @@ class HealthResponse(BaseModel):
     book_sweep: SweepStatus = Field(alias="bookSweep")
     history: HistoryStatus
     trade_watch: TradeWatchStatus = Field(alias="tradeWatch")
+    fill_collect: FillCollectStatus = Field(alias="fillCollect")
 
 
 @app.get("/health", response_model_by_alias=True)
@@ -336,6 +353,7 @@ async def health() -> HealthResponse:
     recorder: HistoryRecorder = app.state.recorder
     store: HistoryStore = app.state.history_store
     watcher: TradeWatcher = app.state.trade_watcher
+    collector: FillCollector = app.state.fill_collector
     completed = sweeper.last_completed_at
     return HealthResponse(
         status="ok",
@@ -368,6 +386,17 @@ async def health() -> HealthResponse:
             last_trade_at=(
                 datetime.fromtimestamp(watcher.last_trade_at, tz=timezone.utc)
                 if watcher.last_trade_at is not None
+                else None
+            ),
+        ),
+         fill_collect=FillCollectStatus(
+            weight_per_minute=LEADERBOARD_WEIGHT_PER_MINUTE,
+            traders_collected=collector.traders_collected,
+            traders_due=collector.due,
+            fills_stored=collector.fills_stored,
+            last_fetch_at=(
+                datetime.fromtimestamp(collector.last_fetch_at, tz=timezone.utc)
+                if collector.last_fetch_at is not None
                 else None
             ),
         ),

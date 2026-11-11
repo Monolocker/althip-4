@@ -179,6 +179,25 @@ class HyperliquidClient:
             )
         return data
     
+    async def fetch_user_fills_by_time(
+        self, user: str, start_ms: int, end_ms: int
+    ) -> list[dict[str, Any]]:
+        """One address's fills in a time window (Milestone 23.2).
+
+        At most FILLS_PAGE_LIMIT fills per response; rate-limit weight 20
+        plus 1 per 20 fills returned. Observed (23 probes): outcome
+        fills carry "dir" (Buy, Sell, Settlement, Merge/Split/Negate
+        Outcome, Merge Question), "closedPnl" BEFORE fees, and "fee".
+        """
+        data = await self._post_info(
+            {"type": "userFillsByTime", "user": user, "startTime": start_ms, "endTime": end_ms}
+        )
+        if not isinstance(data, list):
+            raise HyperliquidError(
+                f"Unexpected userFillsByTime response shape: {type(data).__name__}"
+            )
+        return data
+    
     async def _post_info(self, body: dict[str, Any]) -> Any:
         """POST a request body to the info endpoint and return parsed JSON"""
         try:

@@ -1,15 +1,17 @@
-"""Outcome traders discovered from the public trade stream (Milestone 23).
+"""Outcome traders and their fills (Milestone 23).
 
 Hyperliquid has no "list of outcome traders", but every public trade
-names its buyer and seller (the 23 probe: trades carry "users"). This
-module stores the addresses seen, in the same SQLite file as the
-history recorder. 23.2 will add their fills next to them.
+names its buyer and seller (the 23 probe: trades carry "users"). The
+trade watcher (23.1) stores the addresses seen; the fill collector
+(23.2) stores their outcome fills. Same SQLite file as the history
+recorder.
 """
 
 import sqlite3
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from app.services.history import DEFAULT_DB_PATH
 
@@ -20,10 +22,42 @@ CREATE TABLE IF NOT EXISTS traders (
     last_trade_at INTEGER NOT NULL,  -- their latest trade seen, unix ms
     trades_seen   INTEGER NOT NULL   -- outcome trades seen by this app
 );
+
+-- One row per outcome fill (23.2). closed_pnl is BEFORE fees (23 probe),
+-- so a trader's net realized PnL is SUM(closed_pnl) - SUM(fee). The key
+-- includes coin and time because merges and settlements are fills
+-- whose trade ids are not guaranteed unique per address.
+CREATE TABLE IF NOT EXISTS trader_fills (
+    address    TEXT    NOT NULL,
+    coin       TEXT    NOT NULL,
+    time       INTEGER NOT NULL,  -- unix ms
+    tid        INTEGER NOT NULL,
+    dir        TEXT    NOT NULL,  -- Buy, Sell, Settlement, Merge Outcome, ...
+    px         REAL    NOT NULL,
+    sz         REAL    NOT NULL,
+    closed_pnl REAL    NOT NULL,
+    fee        REAL    NOT NULL,
+    fee_token  TEXT    NOT NULL,
+    PRIMARY KEY (address, coin, time, tid)
+) WITHOUT ROWID;
+
+-- The leaderboard (23.3) sums fills by time window.
+CREATE INDEX IF NOT EXISTS trader_fills_by_time ON trader_fills (time);
 """
 
-# One row per address; a later batch only moves last_trade_at forward
-# and adds to the count. first_seen keeps its first value (as in 21.1).
+# Columns added to `traders` in 23.2. CREATE TABLE IF NOT EXISTS never
+# changes an existing table, so they are added by a small migration.
+TRADER_COLUMNS_23_2 = {
+    # All fills up to this time (unix ms) are stored.
+    "fills_through": "INTEGER",
+    # Earliest time from which this trader's fills are complete. Later
+    # than the 30-day backfill start when Hyperliquid no longer served
+    # their older fills (only the most recent ones are available).
+    "coverage_from": "INTEGER",
+    # When the collector last fetched this trader (ISO, UTC).
+    "fills_checked_at": "TEXT",
+}
+
 UPSERT_TRADER = """
 INSERT INTO traders (address, first_seen, last_trade_at, trades_seen)
 VALUES (?, ?, ?, ?)
@@ -31,6 +65,33 @@ ON CONFLICT(address) DO UPDATE SET
     last_trade_at = MAX(last_trade_at, excluded.last_trade_at),
     trades_seen = trades_seen + excluded.trades_seen
 """
+
+INSERT_FILL = """
+INSERT OR IGNORE INTO trader_fills (
+    address, coin, time, tid, dir, px, sz, closed_pnl, fee, fee_token
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
+# Traders whose fills need fetching: never fetched, traded since the
+# last fetch, or not checked for a while (positions can SETTLE without
+# the trader trading, and settlement is not in the trade stream).
+# Never-fetched first, then the most active.
+DUE_TRADERS = """
+SELECT address, fills_through FROM traders
+WHERE fills_through IS NULL
+   OR last_trade_at > fills_through
+   OR fills_checked_at IS NULL
+   OR fills_checked_at < :stale_before
+ORDER BY fills_through IS NOT NULL, trades_seen DESC
+LIMIT :limit
+"""
+
+
+def _float(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 class TraderStore:
@@ -44,6 +105,12 @@ class TraderStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as connection:
             connection.executescript(SCHEMA)
+            # Migration: add any 23.2 column the table does not have yet.
+            existing = {row[1] for row in connection.execute("PRAGMA table_info(traders)")}
+            for column, declaration in TRADER_COLUMNS_23_2.items():
+                if column not in existing:
+                    connection.execute(f"ALTER TABLE traders ADD COLUMN {column} {declaration}")
+            connection.commit()
 
     def record(self, activity: dict[str, tuple[int, int]]) -> None:
         """Save a batch: address -> (latest trade time ms, trades in batch)."""
@@ -57,3 +124,48 @@ class TraderStore:
     def count(self) -> int:
         with closing(self._connect()) as connection:
             return connection.execute("SELECT COUNT(*) FROM traders").fetchone()[0]
+
+    def due_traders(self, stale_before: datetime, limit: int) -> list[tuple[str, int | None]]:
+        with closing(self._connect()) as connection:
+            return connection.execute(
+                DUE_TRADERS, {"stale_before": stale_before.isoformat(), "limit": limit}
+            ).fetchall()
+
+    def save_fills(self, address: str, fills: list[dict[str, Any]]) -> int:
+        """Store a page of fills (outcome coins only); returns rows added."""
+        rows = [
+            (
+                address,
+                str(f["coin"]),
+                int(f["time"]),
+                int(f.get("tid") or 0),
+                str(f.get("dir") or ""),
+                _float(f.get("px")),
+                _float(f.get("sz")),
+                _float(f.get("closedPnl")),
+                _float(f.get("fee")),
+                str(f.get("feeToken") or ""),
+            )
+            for f in fills
+            if str(f.get("coin", "")).startswith("#") and "time" in f
+        ]
+        with closing(self._connect()) as connection, connection:
+            before = connection.total_changes
+            connection.executemany(INSERT_FILL, rows)
+            return connection.total_changes - before
+
+    def mark_collected(
+        self, address: str, fills_through: int, coverage_from: int | None
+    ) -> None:
+        """Record a finished fetch. coverage_from is only ever set once:
+        the first (backfill) fetch decides how far back we are complete."""
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                "UPDATE traders SET fills_through = ?, fills_checked_at = ?, "
+                "coverage_from = COALESCE(coverage_from, ?) WHERE address = ?",
+                (fills_through, datetime.now(timezone.utc).isoformat(), coverage_from, address),
+            )
+
+    def fill_count(self) -> int:
+        with closing(self._connect()) as connection:
+            return connection.execute("SELECT COUNT(*) FROM trader_fills").fetchone()[0]
