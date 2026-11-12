@@ -1611,13 +1611,6 @@ button {
   }
 }
 
-/* Reduced motion: strip scrolls regardless of user's machine settings */
-@media (prefers-reduced-motion: reduce) {
-  .feed-track {
-    animation-duration: calc(var(--feed-duration, 120s) * 0.6);
-  }
-}
-
 .feed-item {
   display: inline-flex;
   align-items: baseline;

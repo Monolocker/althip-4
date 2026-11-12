@@ -5,7 +5,7 @@ import { formatTime } from '../utils/format'
 
 // Scroll speed: each item gets about this long on screen. The duration
 // grows with the number of items, so the speed stays the same.
-const SECONDS_PER_ITEM = 5
+const SECONDS_PER_ITEM = 2.5
 
 const signedPercent = new Intl.NumberFormat('en-US', {
   style: 'percent',
