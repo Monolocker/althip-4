@@ -198,6 +198,33 @@ class HyperliquidClient:
             )
         return data
     
+    async def fetch_perp_asset_ctxs(
+        self, dex: str = ""
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Every perp of one perp dex and its 24h context (Milestone 24).
+
+        dex "" is Hyperliquid's own perps (BTC, ETH, ...); HIP-3 dexes are
+        named, e.g. "xyz" (xyz:GOLD, xyz:SP500), as listed by perpDexs.
+        Verified (M24.1 probe): [meta, ctxs], where meta["universe"][i]
+        ({"name": ...}) belongs to ctxs[i] ({"markPx", "prevDayPx", ...}).
+        Rate-limit weight 20.
+        """
+        body: dict[str, Any] = {"type": "metaAndAssetCtxs"}
+        if dex:
+            body["dex"] = dex
+        data = await self._post_info(body)
+        if not (
+            isinstance(data, list)
+            and len(data) == 2
+            and isinstance(data[0], dict)
+            and isinstance(data[1], list)
+        ):
+            raise HyperliquidError(
+                f"Unexpected metaAndAssetCtxs response shape for dex {dex!r}: "
+                f"{type(data).__name__}"
+            )
+        return data[0], data[1]
+    
     async def _post_info(self, body: dict[str, Any]) -> Any:
         """POST a request body to the info endpoint and return parsed JSON"""
         try:

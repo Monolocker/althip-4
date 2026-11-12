@@ -18,6 +18,7 @@ from app.models.deployers import DeployerStats
 from app.models.book import OrderBook
 from app.models.candle import CandleRange, PriceHistory
 from app.models.costs import ExecutionEstimate, VenueCost
+from app.models.feed import Feed
 from app.models.leaderboard import Leaderboard, LeaderboardSort, LeaderboardWindow
 from app.models.market import OutcomeMarket, OutcomeMarketDetail
 from app.models.venue import (
@@ -43,6 +44,7 @@ from app.services.polymarket import (
 from app.services.suggestions import SuggestionFinder
 from app.services.fill_collector import LEADERBOARD_WEIGHT_PER_MINUTE, FillCollector
 from app.services.trade_watcher import TradeWatcher
+from app.services.feed import FeedService
 from app.services.leaderboard import WindowResult, build_leaderboard, compute_window
 from app.services.traders import TraderStore
 from app.services.sweep import BookSweeper
@@ -164,6 +166,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.candles = {}
     # window -> (computed_at_monotonic, WindowResult)
     app.state.leaderboard = {}
+    # unified feed: each source caches itself
+    app.state.feed = FeedService(app.state.http, app.state.hyperliquid, live_markets)
 
 
     # Background book sweep (Milestone 18.3b). create_task starts it
@@ -902,3 +906,17 @@ async def leaderboard(
         result = await asyncio.to_thread(compute_window, store, window)
         cache[window] = (time.monotonic(), result)
     return build_leaderboard(result, window, sort, limit)
+
+# ---------------------------------------------------------------
+# Unified feed (Milestone 24)
+# ---------------------------------------------------------------
+
+@app.get("/feed")
+async def feed() -> Feed:
+    """News, sports, ticker and trending items, interleaved.
+
+    Each source refreshes on its own interval and fails on its own:
+    `sources` says which worked, so a dead source never empties the feed.
+    """
+    service: FeedService = app.state.feed
+    return await service.feed()
