@@ -1611,20 +1611,10 @@ button {
   }
 }
 
-/* People who ask their system for less motion get a still strip they
-   can scroll themselves, and no duplicate copy. */
+/* Reduced motion: strip scrolls regardless of user's machine settings */
 @media (prefers-reduced-motion: reduce) {
   .feed-track {
-    animation: none;
-  }
-
-  .feed-viewport {
-    overflow-x: auto;
-    mask-image: none;
-  }
-
-  .feed-row[aria-hidden="true"] {
-    display: none;
+    animation-duration: calc(var(--feed-duration, 120s) * 0.6);
   }
 }
 
