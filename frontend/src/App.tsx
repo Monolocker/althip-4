@@ -6,6 +6,7 @@ import CloseBucketFilter from "./components/CloseBucketFilter"
 import DeployerDirectory from "./components/DeployerDirectory"
 import LeaderboardPanel from "./components/LeaderboardPanel"
 import LeaderboardTable from "./components/LeaderboardTable"
+import FeedTicker from './components/FeedTicker'
 import MarketDetail from "./components/MarketDetail"
 import MarketList from "./components/MarketList"
 import MarketSearch from "./components/MarketSearch"
@@ -119,6 +120,13 @@ function App() {
     setSelectedMarketId(marketId)
   }
 
+// A trending item in the feed (24.3) opens its market from any view:
+  // in Deployers or Leaderboard the market detail would be hidden.
+  function handleOpenMarketFromFeed(marketId: string) {
+    setSidebarView("markets")
+    setSelectedMarketId(marketId)
+  }
+
   // Every filter currently narrowing the list, each with its own way to
   // undo it (Milestone 20.1d). Built from the same state the chips use,
   // so the two can never disagree. Sort order is not a filter: it never
@@ -189,6 +197,8 @@ function App() {
           <p>Read-only outcome market terminal</p>
         </div>
       </header>
+
+      <FeedTicker onSelectMarket={handleOpenMarketFromFeed} />
 
       <div className="terminal-layout">
         <aside className="market-sidebar">

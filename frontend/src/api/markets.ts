@@ -1,6 +1,7 @@
 import type { OrderBook } from '../types/book'
 import type { CandleRange, PriceHistory } from '../types/candle'
 import type { DeployerStats } from '../types/deployer'
+import type { Feed } from '../types/feed'
 import type { Leaderboard, LeaderboardSort, LeaderboardWindow } from '../types/leaderboard'
 import type { ExecutionEstimate } from '../types/execution'
 import type {
@@ -158,6 +159,11 @@ export async function fetchDeployers(
   signal?: AbortSignal,
 ): Promise<DeployerStats[]> {
   return requestJson<DeployerStats[]>('/deployers', 'deployers', signal)
+}
+
+// Unified feed (Milestone 24.3).
+export async function fetchFeed(signal?: AbortSignal): Promise<Feed> {
+  return requestJson<Feed>('/feed', 'feed', signal)
 }
 
 // Trader leaderboard (Milestone 23.4).

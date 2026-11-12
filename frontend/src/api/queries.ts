@@ -11,6 +11,7 @@ import type { Venue } from '../types/venue'
 import {
     ApiError,
     fetchDeployers,
+    fetchFeed,
     fetchLeaderboard,
     createLinks,
     deleteLink,
@@ -124,6 +125,21 @@ export function useLeaderboard(timeWindow: LeaderboardWindow, sort: LeaderboardS
         // While a new window or ranking loads, keep showing the previous
         // one (dimmed) instead of flashing a loading message.
         placeholderData: keepPreviousData,
+    })
+}
+
+// The unified feed (Milestone 24.3). The backend refreshes each source
+// on its own interval (ticker 60 s, news and sports 5 min) and serves
+// its cache in between, so polling once a minute keeps the ticker
+// current without asking for anything twice.
+const FEED_MS = 60_000
+
+export function useFeed() {
+    return useQuery({
+        queryKey: ['feed'] as const,
+        queryFn: ({ signal }) => fetchFeed(signal),
+        staleTime: FEED_MS,
+        refetchInterval: FEED_MS,
     })
 }
 

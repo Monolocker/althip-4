@@ -1544,3 +1544,132 @@ button {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+
+
+/* Milestone 24.3: feed strip */
+
+.feed-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  background: #fafafa;
+  font-size: 0.85rem;
+}
+
+.feed-label {
+  flex: none;
+  color: #555;
+  font-weight: 600;
+  cursor: help;
+}
+
+.feed-warning {
+  color: #9a6b00;
+}
+
+.feed-viewport {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  /* Fade the edges so items glide in and out instead of being cut. */
+  mask-image: linear-gradient(to right, transparent, #000 2rem, #000 calc(100% - 2rem), transparent);
+}
+
+.feed-track {
+  display: flex;
+  width: max-content;
+  animation: feed-scroll var(--feed-duration, 120s) linear infinite;
+}
+
+/* Pausing is what makes an item clickable (decision 4). */
+.feed-strip:hover .feed-track,
+.feed-strip:focus-within .feed-track {
+  animation-play-state: paused;
+}
+
+/* Each row ends with the same gap that separates its items, so the two
+   copies join seamlessly and -50% is exactly one copy. */
+.feed-row {
+  display: flex;
+  gap: 1.75rem;
+  margin: 0;
+  padding: 0 1.75rem 0 0;
+  list-style: none;
+}
+
+@keyframes feed-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* People who ask their system for less motion get a still strip they
+   can scroll themselves, and no duplicate copy. */
+@media (prefers-reduced-motion: reduce) {
+  .feed-track {
+    animation: none;
+  }
+
+  .feed-viewport {
+    overflow-x: auto;
+    mask-image: none;
+  }
+
+  .feed-row[aria-hidden="true"] {
+    display: none;
+  }
+}
+
+.feed-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  max-width: 44ch;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #333;
+  font: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.feed-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.feed-item:hover .feed-text,
+.feed-item:focus-visible .feed-text {
+  text-decoration: underline;
+}
+
+.feed-item--ticker .feed-text {
+  font-weight: 600;
+}
+
+.feed-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.feed-item--trending .feed-value {
+  color: #2a5885;
+}
+
+.feed-change--up {
+  color: #2e7d44;
+}
+
+.feed-change--down {
+  color: #b33a3a;
+}
