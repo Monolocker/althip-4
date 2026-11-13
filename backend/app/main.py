@@ -2,7 +2,12 @@
 
 import asyncio
 import contextlib
+import gc
 import logging
+import os
+import resource
+import sys
+import threading
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -145,6 +150,8 @@ class Snapshot:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Create app-lifetime resources at startup; release them at shutdown."""
+    # Process start, for /debug/runtime's uptime (25.2)
+    app.state.started_at = time.monotonic()
     app.state.http = httpx.AsyncClient()
     app.state.hyperliquid = HyperliquidClient(app.state.http)
     # Other venues (M22), sharing the same connection pool
@@ -920,3 +927,87 @@ async def feed() -> Feed:
     """
     service: FeedService = app.state.feed
     return await service.feed()
+
+# ---------------------------------------------------------------
+# Runtime measurements for the soak test (Milestone 25.2)
+# ---------------------------------------------------------------
+# NOTE: like the write endpoints, this is for localhost only. It exposes
+# internals (process id, cache sizes), so it MUST be removed or protected
+# before the app is ever deployed.
+
+# An entry fetched longer ago than this is past its TTL in every cache
+# below except the hour/day ones (Hyperliquid fees, Kalshi series): it
+# takes memory until the same key is requested again, perhaps never.
+OLD_ENTRY_SECONDS = 600.0
+
+
+def timed_cache_sizes(
+    cache: dict[Any, tuple[float, Any]], now: float
+) -> dict[str, int]:
+    """Entries of a (fetched_at_monotonic, value) cache, and how many are old."""
+    old = sum(1 for fetched_at, _ in cache.values() if now - fetched_at > OLD_ENTRY_SECONDS)
+    return {"entries": len(cache), "older10m": old}
+
+
+def peak_rss_bytes() -> int:
+    """The most resident memory this process has used so far.
+
+    ru_maxrss is in bytes on macOS but in kilobytes on Linux (getrusage
+    man pages), so it is converted to bytes here.
+    """
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return peak if sys.platform == "darwin" else peak * 1024
+
+
+@app.get("/debug/runtime")
+async def debug_runtime() -> dict[str, Any]:
+    """Process vitals and the size of every in-memory cache (25.2).
+
+    Counts, not bytes: Python has no cheap way to measure a structure's
+    total memory. Counts tell us WHICH cache grows; the recorder reads
+    the process's resident memory (RSS) from outside to say how much.
+    Reads a few private attributes on purpose: a measurement probe
+    should not change the services it measures.
+    """
+    now = time.monotonic()
+    snapshot: Snapshot | None = app.state.snapshot
+    templates: tuple[float, dict[str, dict[str, Any]]] | None = app.state.templates
+    leaderboard_cache: dict[str, tuple[float, WindowResult]] = app.state.leaderboard
+    sweeper: BookSweeper = app.state.sweeper
+    watcher: TradeWatcher = app.state.trade_watcher
+    feed_service: FeedService = app.state.feed
+    suggestions: SuggestionFinder = app.state.suggestions
+    try:
+        # One entry per open file descriptor (files, sockets, SQLite).
+        open_fds: int | None = len(os.listdir("/dev/fd"))
+    except OSError:
+        open_fds = None
+    return {
+        "process": {
+            "pid": os.getpid(),
+            "uptimeSeconds": round(now - app.state.started_at),
+            "peakRssBytes": peak_rss_bytes(),
+            # Every object the garbage collector tracks: if this climbs
+            # for hours, Python objects are piling up somewhere.
+            "gcObjects": len(gc.get_objects()),
+            "asyncioTasks": len(asyncio.all_tasks()),
+            "threads": threading.active_count(),
+            "openFds": open_fds,
+        },
+        "caches": {
+            "snapshotMarkets": len(snapshot.markets) if snapshot is not None else 0,
+            "templates": len(templates[1]) if templates is not None else 0,
+            "settled": len(app.state.settled),
+            "books": timed_cache_sizes(app.state.books, now),
+            "candles": timed_cache_sizes(app.state.candles, now),
+            "venueQuotes": timed_cache_sizes(app.state.venue_quotes, now),
+            "executionInputs": timed_cache_sizes(app.state.execution_cache, now),
+            "leaderboardWindows": len(leaderboard_cache),
+            "leaderboardRows": sum(len(result.rows) for _, result in leaderboard_cache.values()),
+            "feedItems": sum(len(source._items) for source in feed_service._sources),
+            "sweepTops": len(sweeper.tops),
+            "seenTradeIds": len(watcher._seen_tids),
+            "pendingTraders": len(watcher._pending),
+            "kalshiSeries": len(suggestions._series),
+        },
+    }
