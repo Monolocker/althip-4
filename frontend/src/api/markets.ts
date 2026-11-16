@@ -3,6 +3,7 @@ import type { CandleRange, PriceHistory } from '../types/candle'
 import type { DeployerStats } from '../types/deployer'
 import type { Feed } from '../types/feed'
 import type { Leaderboard, LeaderboardWindow } from '../types/leaderboard'
+import type { TraderDashboard } from '../types/trader'
 import type { ExecutionEstimate } from '../types/execution'
 import type {
   OutcomeMarket,
@@ -175,6 +176,20 @@ export async function fetchLeaderboard(
   return requestJson<Leaderboard>(
     `/leaderboard?window=${timeWindow}&limit=${limit}`,
     'leaderboard',
+    signal,
+  )
+}
+
+// One trader's dashboard (Milestone 26.2): window figures from stored
+// fills, positions and orders live from Hyperliquid.
+export async function fetchTraderDashboard(
+  address: string,
+  timeWindow: LeaderboardWindow,
+  signal?: AbortSignal,
+): Promise<TraderDashboard> {
+  return requestJson<TraderDashboard>(
+    `/traders/${address}?window=${timeWindow}`,
+    'trader dashboard',
     signal,
   )
 }

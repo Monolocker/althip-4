@@ -1656,3 +1656,173 @@ button {
 .feed-change--down {
   color: #b33a3a;
 }
+
+
+
+/* Milestone 26.3: trader dashboard (layout only; colours come later) */
+
+.trader-address-open {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #1a4fa0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.trader-dashboard-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.trader-dashboard-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-right: auto;
+}
+
+.trader-dashboard-title h2 {
+  margin: 0;
+}
+
+.trader-back {
+  padding: 0.3rem 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.trader-banner {
+  margin: 1rem 0 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  background: #fff4d6;
+  color: #7a5b00;
+  font-size: 0.85rem;
+}
+
+.trader-grid {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) minmax(0, 2fr) minmax(180px, 1fr);
+  gap: 1rem;
+  margin-top: 1rem;
+  transition: opacity 0.15s;
+}
+
+.trader-grid--updating {
+  opacity: 0.55;
+}
+
+.trader-side-cards {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+.trader-card {
+  padding: 1rem;
+  border: 1px solid #e5e5e5;
+  border-radius: 10px;
+  background: #fafafa;
+}
+
+.trader-card h3 {
+  margin: 0 0 0.75rem;
+  color: #555;
+  font-size: 0.85rem;
+}
+
+.trader-stats {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.55rem 0.75rem;
+  margin: 0;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.trader-stats dt {
+  color: #767676;
+}
+
+.trader-stats dd {
+  margin: 0;
+  text-align: right;
+}
+
+.trader-card-note {
+  margin: 0.75rem 0 0;
+  color: #767676;
+  font-size: 0.75rem;
+}
+
+.trader-big-number {
+  margin: 0 0 0.4rem;
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.trader-chart-readout {
+  margin: 0 0 0.25rem;
+  font-size: 0.85rem;
+}
+
+.trader-chart {
+  width: 100%;
+  height: auto;
+  touch-action: none;
+}
+
+.trader-chart-line {
+  fill: none;
+  stroke: #1a4fa0;
+  stroke-width: 2;
+}
+
+.trader-chart-zero {
+  stroke: #999;
+  stroke-dasharray: 4 3;
+}
+
+.trader-market-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #1a4fa0;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.trader-market-link:hover {
+  text-decoration: underline;
+}
+
+.trader-activity {
+  margin-top: 1.5rem;
+}
+
+.trader-activity-table td.trader-market-cell {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trader-tab-count {
+  color: #767676;
+  font-size: 0.8em;
+}
+
+@media (max-width: 900px) {
+  .trader-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

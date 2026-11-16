@@ -13,6 +13,7 @@ import {
     fetchDeployers,
     fetchFeed,
     fetchLeaderboard,
+    fetchTraderDashboard,
     createLinks,
     deleteLink,
     fetchElsewhere,
@@ -140,6 +141,27 @@ export function useFeed() {
         queryFn: ({ signal }) => fetchFeed(signal),
         staleTime: FEED_MS,
         refetchInterval: FEED_MS,
+    })
+}
+
+// One trader's dashboard (Milestone 26.3). The backend reuses the live
+// positions and orders for 10 s (TRADER_LIVE_TTL_SECONDS), so polling
+// every 15 s keeps them current without asking twice for the same data.
+// null = no trader open: the query does not run.
+const TRADER_MS = 15_000
+
+export function useTraderDashboard(address: string | null, timeWindow: LeaderboardWindow) {
+    return useQuery({
+        queryKey: ['traders', address, timeWindow] as const,
+        queryFn:
+            address === null
+                ? skipToken
+                : ({ signal }) => fetchTraderDashboard(address, timeWindow, signal),
+        staleTime: TRADER_MS,
+        refetchInterval: TRADER_MS,
+        // Switching window keeps the previous figures on screen (dimmed)
+        // until the new ones arrive.
+        placeholderData: keepPreviousData,
     })
 }
 

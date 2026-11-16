@@ -10,11 +10,14 @@ type CopyState = 'idle' | 'copied' | 'failed'
 
 interface TraderAddressProps {
   address: string
+  // When given, the shortened address itself is a button that opens the
+  // trader's dashboard (26.3)
+  onOpen?: (address: string) => void
 }
 
 // A shortened address with the full one a click away: copy it, or open
 // it in Hyperliquid's explorer (Milestone 23.4).
-function TraderAddress({ address }: TraderAddressProps) {
+function TraderAddress({ address, onOpen }: TraderAddressProps) {
   const [copyState, setCopyState] = useState<CopyState>('idle')
 
   // Back to the plain button after a moment. The cleanup cancels the
@@ -39,7 +42,18 @@ function TraderAddress({ address }: TraderAddressProps) {
 
   return (
     <span className="trader-address">
-      <code title={address}>{shortAddress(address)}</code>
+      {onOpen === undefined ? (
+        <code title={address}>{shortAddress(address)}</code>
+      ) : (
+        <button
+          type="button"
+          className="trader-address-open"
+          title={`Open the dashboard for ${address}`}
+          onClick={() => onOpen(address)}
+        >
+          <code>{shortAddress(address)}</code>
+        </button>
+      )}
       <button
         type="button"
         className="trader-address-button"

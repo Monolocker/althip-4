@@ -105,6 +105,19 @@ export function formatUsd(value: number): string {
   return signedUsd.format(value)
 }
 
+// Unsigned USDC with cents, for amounts that are not gains or losses:
+// "$291.71" (a position's value, a cost basis).
+const plainUsd = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
+
+export function formatMoney(value: number): string {
+  return plainUsd.format(value)
+}
+
 // "Oct 24" in UTC, for compact labels; full times go in tooltips.
 const shortUtcDate = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",

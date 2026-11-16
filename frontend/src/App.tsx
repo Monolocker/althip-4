@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useMarketDetail, useMarkets } from "./api/queries"
 import ActiveFilters, { type ActiveFilter } from "./components/ActiveFilters"
 import ChipFilter from "./components/ChipFilter"
@@ -14,6 +14,7 @@ import MarketSort from "./components/MarketSort"
 import SidebarViewSwitch, {
   type SidebarView,
 } from "./components/SidebarViewSwitch"
+import TraderDashboard from "./components/TraderDashboard"
 import {
   CLOSE_FILTER_LABELS,
   categoryLabel,
@@ -32,6 +33,7 @@ import {
   type SortMode,
 } from "./features/markets/discovery"
 import { groupEntries } from "./features/markets/grouping"
+import { readTraderLocation, traderHref } from "./features/trader/url"
 import { useNow } from "./hooks/useNow"
 import type { LeaderboardWindow } from "./types/leaderboard"
 
@@ -47,13 +49,39 @@ function App() {
   const [sortMode, setSortMode] = useState<SortMode>("default")
   // null = all deployers; "" = markets with no venue.
   const [venueFilter, setVenueFilter] = useState<string | null>(null)
-  const [sidebarView, setSidebarView] = useState<SidebarView>("markets")
+  // A shared ?trader= link opens straight into the Leaderboard view (26.3).
+  const [sidebarView, setSidebarView] = useState<SidebarView>(() =>
+    readTraderLocation() !== null ? "leaderboard" : "markets",
+  )
   // null = all categories.
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
   // Leaderboard kept here, not inside the view, b/c sidebar and workspace 
   // table both need it
   const [leaderboardWindow, setLeaderboardWindow] = 
     useState<LeaderboardWindow>("7d")
+  // The trader dashboard (26.3): which trader is open, and its window.
+  // Both mirror the URL (?trader=0x…&window=30d), read once at start.
+  const [selectedTrader, setSelectedTrader] = useState<string | null>(
+    () => readTraderLocation()?.address ?? null,
+  )
+  const [traderWindow, setTraderWindow] = useState<LeaderboardWindow>(
+    () => readTraderLocation()?.window ?? "30d",
+  )
+
+  // Back / Forward change the URL without reloading; popstate is how the
+  // app hears about it, and the URL is then the source of truth.
+  useEffect(() => {
+    function handlePopState() {
+      const location = readTraderLocation()
+      setSelectedTrader(location?.address ?? null)
+      if (location !== null) {
+        setTraderWindow(location.window)
+        setSidebarView("leaderboard")
+      }
+    }
+    window.addEventListener("popstate", handlePopState)
+    return () => window.removeEventListener("popstate", handlePopState)
+  }, [])
  
   const now = useNow(CLOCK_TICK_MS)
   const marketsQuery = useMarkets()
@@ -123,6 +151,48 @@ function App() {
   function handleOpenMarketFromFeed(marketId: string) {
     setSidebarView("markets")
     setSelectedMarketId(marketId)
+    if (selectedTrader !== null) {
+      setSelectedTrader(null)
+      window.history.replaceState(null, "", traderHref(null))
+    }
+  }
+
+  // Trader dashboard navigation (26.3). Opening or leaving a dashboard
+  // adds a history entry (pushState), so Back returns to where you were;
+  // changing its window only rewrites the current entry (replaceState).
+  function handleOpenTrader(address: string) {
+    setSelectedTrader(address)
+    setTraderWindow(leaderboardWindow)
+    window.history.pushState(null, "", traderHref({ address, window: leaderboardWindow }))
+  }
+
+  function handleTraderWindowChange(next: LeaderboardWindow) {
+    setTraderWindow(next)
+    if (selectedTrader !== null) {
+      window.history.replaceState(null, "", traderHref({ address: selectedTrader, window: next }))
+    }
+  }
+
+  function handleCloseTrader() {
+    setSelectedTrader(null)
+    window.history.pushState(null, "", traderHref(null))
+  }
+
+  // A market in the dashboard opens in the Markets view; Back returns to
+  // the dashboard, because the dashboard's URL is the previous entry.
+  function handleOpenMarketFromTrader(marketId: string) {
+    setSidebarView("markets")
+    setSelectedMarketId(marketId)
+    setSelectedTrader(null)
+    window.history.pushState(null, "", traderHref(null))
+  }
+
+  function handleSidebarViewChange(view: SidebarView) {
+    setSidebarView(view)
+    if (view !== "leaderboard" && selectedTrader !== null) {
+      setSelectedTrader(null)
+      window.history.replaceState(null, "", traderHref(null))
+    }
   }
 
   // Every filter currently narrowing the list, each with its own way to
@@ -200,7 +270,7 @@ function App() {
 
       <div className="terminal-layout">
         <aside className="market-sidebar">
-          <SidebarViewSwitch value={sidebarView} onChange={setSidebarView} />
+          <SidebarViewSwitch value={sidebarView} onChange={handleSidebarViewChange} />
 
           {sidebarView === "leaderboard" ? (
             <LeaderboardPanel
@@ -269,9 +339,20 @@ function App() {
 
         <section className="market-workspace">
           {sidebarView === "leaderboard" ? (
-            <LeaderboardTable 
-              timeWindow={leaderboardWindow}
-            />
+            selectedTrader !== null ? (
+              <TraderDashboard
+                address={selectedTrader}
+                timeWindow={traderWindow}
+                onWindowChange={handleTraderWindowChange}
+                onClose={handleCloseTrader}
+                onOpenMarket={handleOpenMarketFromTrader}
+              />
+            ) : (
+              <LeaderboardTable
+                timeWindow={leaderboardWindow}
+                onSelectTrader={handleOpenTrader}
+              />
+            )
           ) : selectedMarket !== null ? (
             <MarketDetail
               market={selectedMarket}

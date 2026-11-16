@@ -37,10 +37,12 @@ const COLUMNS = 7
 
 interface LeaderboardTableProps {
   timeWindow: LeaderboardWindow
+  onSelectTrader: (address: string) => void
 }
 
 // Workspace half of the Leaderboard view (Milestone 23.4, v2 in 26.1).
-function LeaderboardTable({ timeWindow }: LeaderboardTableProps) {
+// Clicking an address opens that trader's dashboard (26.3)
+function LeaderboardTable({ timeWindow, onSelectTrader }: LeaderboardTableProps) {
   const leaderboard = useLeaderboard(timeWindow)
   // One expanded row at a time, remembered by address, so it stays open
   // when the row moves after a refresh.
@@ -116,7 +118,7 @@ function LeaderboardTable({ timeWindow }: LeaderboardTableProps) {
                   <tr className={isOpen ? 'leaderboard-row leaderboard-row--open' : 'leaderboard-row'}>
                     <td className="leaderboard-num">{index + 1}</td>
                     <td>
-                      <TraderAddress address={row.address} />
+                      <TraderAddress address={row.address} onOpen={onSelectTrader} />
                     </td>
                     <td className="leaderboard-num">
                       <span className={pnlClass(row.netPnl)}>{formatUsd(row.netPnl)}</span>
