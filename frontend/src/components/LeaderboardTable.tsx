@@ -1,8 +1,8 @@
 import { Fragment, useState } from 'react'
 import { useLeaderboard } from '../api/queries'
-import { SORT_LABELS, WINDOW_LABELS } from '../features/leaderboard/options'
-import type { LeaderboardRow, LeaderboardSort, LeaderboardWindow } from '../types/leaderboard'
-import { formatShortDate, formatTime, formatUsd, formatVolume } from '../utils/format'
+import { WINDOW_LABELS } from '../features/leaderboard/options'
+import type { LeaderboardRow, LeaderboardWindow } from '../types/leaderboard'
+import { formatUsd, formatVolume } from '../utils/format'
 import TraderAddress from './TraderAddress'
 
 function pnlClass(value: number): string {
@@ -11,46 +11,10 @@ function pnlClass(value: number): string {
   return 'pnl'
 }
 
-// What this trader's history covers, shown only when it needs attention.
-function HistoryBadges({ row }: { row: LeaderboardRow }) {
-  const through = formatTime(row.fillsThrough)?.utc ?? row.fillsThrough
-  return (
-    <span className="history-badges">
-      {row.coverage === 'full' ? (
-        <span className="leaderboard-muted">full</span>
-      ) : row.coverageFrom === null ? (
-        <span
-          className="history-badge history-badge--checking"
-          title="This trader's history is being re-fetched: completeness is not known yet."
-        >
-          checking
-        </span>
-      ) : (
-        <span
-          className="history-badge history-badge--partial"
-          title={`Fills are complete only from ${formatTime(row.coverageFrom)?.utc}, after this window starts.`}
-        >
-          from {formatShortDate(row.coverageFrom)}
-        </span>
-      )}
-      {row.behind && (
-        <span
-          className="history-badge history-badge--behind"
-          title={`Trades seen that are not fetched yet. Fills as of ${through}.`}
-        >
-          catching up
-        </span>
-      )}
-    </span>
-  )
-}
-
 // Where the net PnL came from. Conversions (merges, splits, negations)
 // are Hyperliquid's own accounting and can be large, so they are shown
 // rather than folded silently into one number.
 function RowDetails({ row }: { row: LeaderboardRow }) {
-  const coverageFrom = formatTime(row.coverageFrom)
-  const through = formatTime(row.fillsThrough)
   return (
     <div className="leaderboard-details">
       <p>
@@ -62,42 +26,27 @@ function RowDetails({ row }: { row: LeaderboardRow }) {
         <strong className={pnlClass(row.netPnl)}>{formatUsd(row.netPnl)}</strong>
       </p>
       <p>
-        Settlements: {row.settlementsWon} won · {row.settlementsLost} lost
-        {row.settlementsFractional > 0 && ` · ${row.settlementsFractional} fractional`}
-      </p>
-      <p>
-        History complete from {coverageFrom?.utc ?? 'not verified yet'} · fills fetched through{' '}
-        {through?.utc ?? '—'}
+        Markets: {row.wins} won · {row.losses} lost · {row.markets - row.wins - row.losses} with nothing
+        realized yet
       </p>
     </div>
   )
 }
 
-// Header cell of a column the leaderboard can be ranked by.
-function RankHeader({ label, active }: { label: string; active: boolean }) {
-  return (
-    <th className="leaderboard-num" aria-sort={active ? 'descending' : undefined}>
-      {label}
-      {active && ' ▾'}
-    </th>
-  )
-}
-
-const COLUMNS = 9
+const COLUMNS = 7
 
 interface LeaderboardTableProps {
   timeWindow: LeaderboardWindow
-  sort: LeaderboardSort
 }
 
-// Workspace half of the Leaderboard view (Milestone 23.4).
-function LeaderboardTable({ timeWindow, sort }: LeaderboardTableProps) {
-  const leaderboard = useLeaderboard(timeWindow, sort)
+// Workspace half of the Leaderboard view (Milestone 23.4, v2 in 26.1).
+function LeaderboardTable({ timeWindow }: LeaderboardTableProps) {
+  const leaderboard = useLeaderboard(timeWindow)
   // One expanded row at a time, remembered by address, so it stays open
   // when the row moves after a refresh.
   const [expanded, setExpanded] = useState<string | null>(null)
 
-  const title = `Leaderboard · ${WINDOW_LABELS[timeWindow]} · by ${SORT_LABELS[sort]}`
+  const title = `Leaderboard · ${WINDOW_LABELS[timeWindow]}`
 
   if (leaderboard.isPending) {
     return (
@@ -121,7 +70,7 @@ function LeaderboardTable({ timeWindow, sort }: LeaderboardTableProps) {
     return (
       <div className="market-detail-empty">
         <h2>{title}</h2>
-        <p>No traders with outcome fills in this window yet.</p>
+        <p>No traders with complete outcome fills in this window yet.</p>
       </div>
     )
   }
@@ -131,13 +80,13 @@ function LeaderboardTable({ timeWindow, sort }: LeaderboardTableProps) {
       <div className="market-detail-header">
         <h2>{title}</h2>
         <p className="detail-note leaderboard-subtitle">
-          Top {data.rows.length} of {data.tradersRanked} ranked traders. Realized PnL in USDC, net of
-          fees, outcome markets only.
+          Top {data.rows.length} of {data.tradersRanked} ranked traders. Realized PnL in USDC after
+          fees, HIP-4 outcome markets only. {data.tradersExcluded} traders left out: history incomplete.
         </p>
       </div>
 
-      {/* While a new window or ranking loads, the previous table stays
-          on screen, dimmed (keepPreviousData), instead of a blank page. */}
+      {/* While a new window loads, the previous table stays on screen,
+          dimmed (keepPreviousData), instead of a blank page. */}
       <div
         className={
           leaderboard.isPlaceholderData ? 'leaderboard-table leaderboard-table--updating' : 'leaderboard-table'
@@ -148,12 +97,12 @@ function LeaderboardTable({ timeWindow, sort }: LeaderboardTableProps) {
             <tr>
               <th className="leaderboard-num">#</th>
               <th>Trader</th>
-              <RankHeader label="Net PnL" active={sort === 'pnl'} />
-              <RankHeader label="Volume" active={sort === 'volume'} />
-              <RankHeader label="Fills" active={sort === 'fills'} />
+              <th className="leaderboard-num" aria-sort="descending">
+                Net PnL ▾
+              </th>
+              <th className="leaderboard-num">Volume</th>
               <th className="leaderboard-num">Markets</th>
-              <th className="leaderboard-num">Settled W–L</th>
-              <th>History</th>
+              <th className="leaderboard-num">W–L</th>
               <th>
                 <span className="visually-hidden">Details</span>
               </th>
@@ -173,13 +122,9 @@ function LeaderboardTable({ timeWindow, sort }: LeaderboardTableProps) {
                       <span className={pnlClass(row.netPnl)}>{formatUsd(row.netPnl)}</span>
                     </td>
                     <td className="leaderboard-num">${formatVolume(row.volume)}</td>
-                    <td className="leaderboard-num">{row.fills.toLocaleString('en-US')}</td>
                     <td className="leaderboard-num">{row.markets}</td>
                     <td className="leaderboard-num">
-                      {row.settlementsWon}–{row.settlementsLost}
-                    </td>
-                    <td>
-                      <HistoryBadges row={row} />
+                      {row.wins}–{row.losses}
                     </td>
                     <td>
                       <button

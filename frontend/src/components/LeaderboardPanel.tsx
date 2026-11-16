@@ -1,60 +1,22 @@
 import { useLeaderboard } from '../api/queries'
-import { SORTS, SORT_LABELS, WINDOWS, WINDOW_LABELS } from '../features/leaderboard/options'
-import type { LeaderboardSort, LeaderboardWindow } from '../types/leaderboard'
+import { WINDOWS, WINDOW_LABELS } from '../features/leaderboard/options'
+import type { LeaderboardWindow } from '../types/leaderboard'
 import { formatTime } from '../utils/format'
-
-interface ToggleGroupProps<T extends string> {
-  label: string
-  options: T[]
-  labels: Record<T, string>
-  value: T
-  onChange: (value: T) => void
-}
-
-// A generic toggle row: T is the union of allowed values ('24h' | ...),
-// so onChange can only ever receive one of them.
-function ToggleGroup<T extends string>({ label, options, labels, value, onChange }: ToggleGroupProps<T>) {
-  return (
-    <div className="leaderboard-group">
-      <span className="leaderboard-group-label">{label}</span>
-      <div className="side-toggle" role="group" aria-label={label}>
-        {options.map((option) => (
-          <button
-            key={option}
-            type="button"
-            className={
-              option === value ? 'side-toggle-button side-toggle-button--active' : 'side-toggle-button'
-            }
-            aria-pressed={option === value}
-            onClick={() => onChange(option)}
-          >
-            {labels[option]}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-}
 
 interface LeaderboardPanelProps {
   timeWindow: LeaderboardWindow
-  sort: LeaderboardSort
   onWindowChange: (timeWindow: LeaderboardWindow) => void
-  onSortChange: (sort: LeaderboardSort) => void
 }
 
-// Sidebar half of the Leaderboard view (Milestone 23.4): the controls,
-// and what the numbers do and do not cover. It calls the same hook with
-// the same key as the table, so both share ONE request.
-function LeaderboardPanel({ timeWindow, sort, onWindowChange, onSortChange }: LeaderboardPanelProps) {
-  const leaderboard = useLeaderboard(timeWindow, sort)
+// Sidebar half of the Leaderboard view (Milestone 23.4, v2 in 26.1):
+// the window toggle, and what the numbers do and do not cover. It calls
+// the same hook with the same key as the table, so both share ONE
+// request.
+function LeaderboardPanel({ timeWindow, onWindowChange }: LeaderboardPanelProps) {
+  const leaderboard = useLeaderboard(timeWindow)
   const data = leaderboard.data
 
-  const shown = data?.rows ?? []
-  const full = shown.filter((row) => row.coverage === 'full').length
-  const behind = shown.filter((row) => row.behind).length
   const start = formatTime(data?.windowStart ?? null)
-  const since = formatTime(data?.trackingSince ?? null)
   const updated = formatTime(data?.generatedAt ?? null)
 
   return (
@@ -64,43 +26,51 @@ function LeaderboardPanel({ timeWindow, sort, onWindowChange, onSortChange }: Le
         {data !== undefined && <span>{data.tradersRanked}</span>}
       </div>
 
-      <ToggleGroup
-        label="Window"
-        options={WINDOWS}
-        labels={WINDOW_LABELS}
-        value={timeWindow}
-        onChange={onWindowChange}
-      />
-      <ToggleGroup label="Rank by" options={SORTS} labels={SORT_LABELS} value={sort} onChange={onSortChange} />
+      <div className="leaderboard-group">
+        <span className="leaderboard-group-label">Window</span>
+        <div className="side-toggle" role="group" aria-label="Window">
+          {WINDOWS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              className={
+                option === timeWindow ? 'side-toggle-button side-toggle-button--active' : 'side-toggle-button'
+              }
+              aria-pressed={option === timeWindow}
+              onClick={() => onWindowChange(option)}
+            >
+              {WINDOW_LABELS[option]}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {data !== undefined && (
         <dl className="leaderboard-summary">
           <dt>Window starts</dt>
           <dd>
-            {start?.utc ?? '—'}
-            {timeWindow === 'all' && <span className="leaderboard-muted"> (since tracking began)</span>}
+            {timeWindow === 'all' ? (
+              <span className="leaderboard-muted">each trader's full tracked history</span>
+            ) : (
+              start?.utc ?? '—'
+            )}
           </dd>
-          <dt>Full history</dt>
-          <dd>
-            {full} of {shown.length} shown
-          </dd>
-          <dt>Catching up</dt>
-          <dd>{behind} with recent trades not fetched yet</dd>
-          <dt>Traders</dt>
-          <dd>
-            {data.tradersKnown} discovered, {data.tradersPending} awaiting first fetch
-          </dd>
-          <dt>Tracking since</dt>
-          <dd>{since?.utc ?? '—'}</dd>
+          <dt>Ranked</dt>
+          <dd>{data.tradersRanked} traders with fills in this window</dd>
+          <dt>Left out</dt>
+          <dd>{data.tradersExcluded} whose history doesn't cover this window yet</dd>
+          <dt>Discovered</dt>
+          <dd>{data.tradersKnown} traders seen on the trade stream</dd>
           <dt>Updated</dt>
           <dd>{updated?.utc ?? '—'}</dd>
         </dl>
       )}
 
       <ul className="leaderboard-notes">
-        <li>Outcome markets only: perp and spot fills are never stored.</li>
-        <li>Realized PnL net of fees. Open positions are not included.</li>
-        <li>Only traders this app has seen trading are ranked.</li>
+        <li>HIP-4 outcome markets only: perp and spot fills are never stored.</li>
+        <li>Ranked by realized PnL after fees. Open positions are not included.</li>
+        <li>Wins and losses count markets: a market is a win if its net PnL in the window is above 0.</li>
+        <li>Only traders this app has seen trading, and whose history is complete, are ranked.</li>
       </ul>
     </section>
   )

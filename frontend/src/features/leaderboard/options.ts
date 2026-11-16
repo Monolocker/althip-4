@@ -1,8 +1,7 @@
-import type { LeaderboardSort, LeaderboardWindow } from '../../types/leaderboard'
+import type { LeaderboardWindow } from '../../types/leaderboard'
 
-// Display order of the toggles.
+// Display order of the window toggle.
 export const WINDOWS: LeaderboardWindow[] = ['24h', '7d', '30d', 'all']
-export const SORTS: LeaderboardSort[] = ['pnl', 'volume', 'fills']
 
 // Record<Union, string> makes the compiler insist on a label for every
 // member: adding a window to the type without a label is a build error.
@@ -11,10 +10,4 @@ export const WINDOW_LABELS: Record<LeaderboardWindow, string> = {
   '7d': '7d',
   '30d': '30d',
   all: 'All-Time',
-}
-
-export const SORT_LABELS: Record<LeaderboardSort, string> = {
-  pnl: 'Net PnL',
-  volume: 'Volume',
-  fills: 'Fills',
 }

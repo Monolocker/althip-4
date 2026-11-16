@@ -24,7 +24,7 @@ from app.models.book import OrderBook
 from app.models.candle import CandleRange, PriceHistory
 from app.models.costs import ExecutionEstimate, VenueCost
 from app.models.feed import Feed
-from app.models.leaderboard import Leaderboard, LeaderboardSort, LeaderboardWindow
+from app.models.leaderboard import Leaderboard, LeaderboardWindow
 from app.models.market import OutcomeMarket, OutcomeMarketDetail
 from app.models.venue import (
     ElsewhereEntry,
@@ -896,13 +896,12 @@ LEADERBOARD_TTL_SECONDS = 60.0
 @app.get("/leaderboard")
 async def leaderboard(
     window: LeaderboardWindow = "30d",
-    sort: LeaderboardSort = "pnl",
     limit: int = Query(default=100, ge=1, le=500),
 ) -> Leaderboard:
-    """Traders ranked by realized PnL net of fees (or volume, fills).
+    """Traders ranked by realized PnL net of fees (v2, 26.1).
 
-    Only traders this app has discovered and fetched are ranked; each
-    row says whether its history covers the whole window.
+    Only traders whose stored fills are complete for the window are
+    ranked; the rest are counted in tradersExcluded.
     """
     cache: dict[str, tuple[float, WindowResult]] = app.state.leaderboard
     cached = cache.get(window)
@@ -912,7 +911,7 @@ async def leaderboard(
         store: TraderStore = app.state.trader_store
         result = await asyncio.to_thread(compute_window, store, window)
         cache[window] = (time.monotonic(), result)
-    return build_leaderboard(result, window, sort, limit)
+    return build_leaderboard(result, window, limit)
 
 # ---------------------------------------------------------------
 # Unified feed (Milestone 24)

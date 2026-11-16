@@ -33,7 +33,7 @@ import {
 } from "./features/markets/discovery"
 import { groupEntries } from "./features/markets/grouping"
 import { useNow } from "./hooks/useNow"
-import type { LeaderboardSort, LeaderboardWindow } from "./types/leaderboard"
+import type { LeaderboardWindow } from "./types/leaderboard"
 
 // Bucket boundaries are hours and days apart; re-evaluating them once
 // a minute is far more precise than they need.
@@ -54,8 +54,6 @@ function App() {
   // table both need it
   const [leaderboardWindow, setLeaderboardWindow] = 
     useState<LeaderboardWindow>("7d")
-  const [leaderboardSort, setLeaderboardSort] = 
-    useState<LeaderboardSort>("pnl")
  
   const now = useNow(CLOCK_TICK_MS)
   const marketsQuery = useMarkets()
@@ -207,9 +205,7 @@ function App() {
           {sidebarView === "leaderboard" ? (
             <LeaderboardPanel
               timeWindow={leaderboardWindow}
-              sort={leaderboardSort}
               onWindowChange={setLeaderboardWindow}
-              onSortChange={setLeaderboardSort}
             />
           
           ) : sidebarView === "deployers" ? (
@@ -275,7 +271,6 @@ function App() {
           {sidebarView === "leaderboard" ? (
             <LeaderboardTable 
               timeWindow={leaderboardWindow}
-              sort={leaderboardSort}
             />
           ) : selectedMarket !== null ? (
             <MarketDetail

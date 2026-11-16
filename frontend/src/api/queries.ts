@@ -6,7 +6,7 @@ import {
 } from '@tanstack/react-query'
 import { keepPreviousData } from '@tanstack/react-query'
 import type { CandleRange } from '../types/candle'
-import type { LeaderboardSort, LeaderboardWindow } from '../types/leaderboard'
+import type { LeaderboardWindow } from '../types/leaderboard'
 import type { Venue } from '../types/venue'
 import {
     ApiError,
@@ -111,19 +111,19 @@ export function useDeployers() {
 // window at most once a minute (LEADERBOARD_TTL_SECONDS), so polling
 // faster would only return copies. The sidebar panel and the table call
 // this hook with the same key, so they share ONE request and one cache
-// entry; each (window, sort) pair is its own entry, so switching back is
-// instant.
+// entry; each window is its own entry, so switching back is instant.
+// Ranked by net PnL only (26.1).
 const LEADERBOARD_MS = 60_000
 const LEADERBOARD_LIMIT = 100
 
-export function useLeaderboard(timeWindow: LeaderboardWindow, sort: LeaderboardSort) {
+export function useLeaderboard(timeWindow: LeaderboardWindow) {
     return useQuery({
-        queryKey: ['leaderboard', timeWindow, sort] as const,
-        queryFn: ({ signal }) => fetchLeaderboard(timeWindow, sort, LEADERBOARD_LIMIT, signal),
+        queryKey: ['leaderboard', timeWindow] as const,
+        queryFn: ({ signal }) => fetchLeaderboard(timeWindow, LEADERBOARD_LIMIT, signal),
         staleTime: LEADERBOARD_MS,
         refetchInterval: LEADERBOARD_MS,
-        // While a new window or ranking loads, keep showing the previous
-        // one (dimmed) instead of flashing a loading message.
+        // While a new window loads, keep showing the previous one
+        // (dimmed) instead of flashing a loading message.
         placeholderData: keepPreviousData,
     })
 }
