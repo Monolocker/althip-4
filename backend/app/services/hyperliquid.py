@@ -198,6 +198,36 @@ class HyperliquidClient:
             )
         return data
     
+    async def fetch_spot_clearinghouse_state(self, user: str) -> dict[str, Any]:
+        """One address's token balances (Milestone 26.2); weight 2 (docs).
+
+        26.0 probes: HIP-4 outcome holdings are balances here, named
+        "+N" for the outcome coin "#N", with "total", "hold" (locked by
+        open orders) and "entryNtl" (cost basis). clearinghouseState
+        (perps) held no outcome positions for any probed trader.
+        """
+        data = await self._post_info({"type": "spotClearinghouseState", "user": user})
+        if not isinstance(data, dict) or not isinstance(data.get("balances"), list):
+            raise HyperliquidError(
+                f"Unexpected spotClearinghouseState response shape: {type(data).__name__}"
+            )
+        return data
+
+    async def fetch_frontend_open_orders(self, user: str) -> list[dict[str, Any]]:
+        """One address's resting orders, all coins (Milestone 26.2).
+
+        26.0 probe: outcome orders carry "#N" coins, "side" B/A,
+        "limitPx", "sz", "origSz", "timestamp", "orderType", "tif" and
+        "reduceOnly". Weight 20 (the documented weight of info requests
+        not listed with their own).
+        """
+        data = await self._post_info({"type": "frontendOpenOrders", "user": user})
+        if not isinstance(data, list):
+            raise HyperliquidError(
+                f"Unexpected frontendOpenOrders response shape: {type(data).__name__}"
+            )
+        return data
+    
     async def fetch_perp_asset_ctxs(
         self, dex: str = ""
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:

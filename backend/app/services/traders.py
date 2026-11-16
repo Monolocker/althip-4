@@ -186,6 +186,40 @@ FROM m
 GROUP BY address
 """
 
+# One trader's dashboard (26.2), same definitions as the leaderboard.
+# Titles come from the history recorder's `markets` table (21.1), which
+# lives in the same database file and remembers settled markets too.
+TRADER_ROW = """
+SELECT coverage_from, fills_through, last_trade_at FROM traders WHERE address = ?
+"""
+
+TRADER_MARKETS = """
+WITH m AS (
+    SELECT CAST(substr(coin, 2) AS INTEGER) / 10 AS outcome,
+        SUM(closed_pnl) AS gross_pnl,
+        SUM(fee) AS fees,
+        SUM(CASE WHEN dir IN ('Buy', 'Sell') THEN px * sz ELSE 0 END) AS volume,
+        MAX(closed_pnl <> 0) AS realized,
+        MAX(dir = 'Settlement') AS settled,
+        MAX(time) AS last_fill
+    FROM trader_fills
+    WHERE address = :address AND time >= :start
+    GROUP BY outcome
+)
+SELECT m.*, mk.title
+FROM m LEFT JOIN markets mk ON mk.id = CAST(m.outcome AS TEXT)
+"""
+
+# Net realized PnL per time bucket, for the cumulative chart. Integer
+# division puts every fill in bucket number (time - start) / bucket.
+TRADER_PNL_BUCKETS = """
+SELECT (time - :start) / :bucket AS bucket, SUM(closed_pnl - fee) AS net
+FROM trader_fills
+WHERE address = :address AND time >= :start
+GROUP BY bucket
+ORDER BY bucket
+"""
+
 def _float(value: Any) -> float:
     try:
         return float(value)
@@ -338,3 +372,23 @@ class TraderStore:
             known, pending, complete = connection.execute(TRADER_SUMMARY, params).fetchone()
             rows = [dict(row) for row in connection.execute(LEADERBOARD, params)]
         return LeaderboardData(known, pending, complete, rows)
+
+    def trader(self, address: str) -> tuple[int | None, int | None, int] | None:
+        """(coverage_from, fills_through, last_trade_at), or None if unknown."""
+        with closing(self._connect()) as connection:
+            return connection.execute(TRADER_ROW, (address,)).fetchone()
+
+    def trader_markets(self, address: str, start_ms: int) -> list[dict[str, Any]]:
+        """Per-market totals of one trader's fills at or after start_ms."""
+        with closing(self._connect()) as connection:
+            connection.row_factory = sqlite3.Row
+            params = {"address": address, "start": start_ms}
+            return [dict(row) for row in connection.execute(TRADER_MARKETS, params)]
+
+    def trader_pnl_buckets(
+        self, address: str, start_ms: int, bucket_ms: int
+    ) -> list[tuple[int, float]]:
+        """(bucket number, net PnL) for every bucket with fills, in order."""
+        with closing(self._connect()) as connection:
+            params = {"address": address, "start": start_ms, "bucket": bucket_ms}
+            return connection.execute(TRADER_PNL_BUCKETS, params).fetchall()

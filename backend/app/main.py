@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from typing import Any, AsyncIterator
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException, Path, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -26,6 +26,7 @@ from app.models.costs import ExecutionEstimate, VenueCost
 from app.models.feed import Feed
 from app.models.leaderboard import Leaderboard, LeaderboardWindow
 from app.models.market import OutcomeMarket, OutcomeMarketDetail
+from app.models.trader import TraderDashboard
 from app.models.venue import (
     ElsewhereEntry,
     LinkGroupCreate,
@@ -51,6 +52,7 @@ from app.services.fill_collector import LEADERBOARD_WEIGHT_PER_MINUTE, FillColle
 from app.services.trade_watcher import TradeWatcher
 from app.services.feed import FeedService
 from app.services.leaderboard import WindowResult, build_leaderboard, compute_window
+from app.services.trader_dashboard import build_orders, build_positions, compute_stored, side_index
 from app.services.traders import TraderStore
 from app.services.sweep import BookSweeper
 from app.services.hyperliquid import HyperliquidClient, HyperliquidError
@@ -912,6 +914,88 @@ async def leaderboard(
         result = await asyncio.to_thread(compute_window, store, window)
         cache[window] = (time.monotonic(), result)
     return build_leaderboard(result, window, limit)
+
+# ---------------------------------------------------------------
+# Trader dashboard (Milestone 26.2)
+# ---------------------------------------------------------------
+# Live parts are reused for a few seconds, so a dashboard that polls
+# (or two tabs on the same trader) cannot multiply requests. Weight per
+# refresh: 2 (spotClearinghouseState) + 20 (frontendOpenOrders).
+TRADER_LIVE_TTL_SECONDS = 10.0
+ADDRESS_PATTERN = r"^0x[0-9a-fA-F]{40}$"
+
+
+@app.get("/traders/{address}")
+async def trader_dashboard(
+    address: str = Path(pattern=ADDRESS_PATTERN),
+    window: LeaderboardWindow = "30d",
+) -> TraderDashboard:
+    """One trader's HIP-4 dashboard: window figures from stored fills,
+    positions and open orders live from Hyperliquid.
+
+    404 if this app has never seen the address trade. If Hyperliquid
+    cannot be reached, the stored figures are still returned, with
+    positions and orders None and liveError saying why.
+    """
+    address = address.lower()  # stored as the trade stream sends them
+    generated_at = datetime.now(timezone.utc)
+    store: TraderStore = app.state.trader_store
+    stored = await asyncio.to_thread(
+        compute_stored, store, address, window, int(generated_at.timestamp() * 1000)
+    )
+    if stored is None:
+        raise HTTPException(status_code=404, detail=f"{address} is not a trader this app tracks")
+
+    client: HyperliquidClient = app.state.hyperliquid
+    state, open_orders, snapshot = await asyncio.gather(
+        cached_input(
+            ("hyperliquid", "spotClearinghouseState", address),
+            TRADER_LIVE_TTL_SECONDS,
+            lambda: client.fetch_spot_clearinghouse_state(address),
+        ),
+        cached_input(
+            ("hyperliquid", "frontendOpenOrders", address),
+            TRADER_LIVE_TTL_SECONDS,
+            lambda: client.fetch_frontend_open_orders(address),
+        ),
+        get_snapshot(),
+        return_exceptions=True,
+    )
+    errors: list[str] = []
+    positions = orders = None
+    if isinstance(snapshot, BaseException):
+        errors.append("market snapshot unavailable")
+    else:
+        sides = side_index(snapshot.markets)
+        if isinstance(state, BaseException):
+            errors.append(f"positions: {state}")
+        else:
+            positions = build_positions(state["balances"], sides)
+        if isinstance(open_orders, BaseException):
+            errors.append(f"orders: {open_orders}")
+        else:
+            orders = build_orders(open_orders, sides)
+
+    return TraderDashboard(
+        address=address,
+        window=window,
+        window_start=_utc_ms(stored.window_start),
+        generated_at=generated_at,
+        complete=stored.complete,
+        history_from=_utc_ms(stored.history_from),
+        fills_through=_utc_ms(stored.fills_through),
+        stats=stored.stats,
+        biggest_win=stored.biggest_win,
+        pnl_series=stored.pnl_series,
+        resolved=stored.resolved,
+        positions=positions,
+        orders=orders,
+        live_error="; ".join(errors) or None,
+    )
+
+
+def _utc_ms(ms: int | None) -> datetime | None:
+    return None if ms is None else datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
 
 # ---------------------------------------------------------------
 # Unified feed (Milestone 24)
