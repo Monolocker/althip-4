@@ -10,12 +10,14 @@ Hyperliquid limits that shape it:
     20 fills returned (docs).
   - At most FILLS_PAGE_LIMIT fills per response (observed: exactly 2000).
   - The docs say only an address's 10,000 most recent fills are served.
-    The evidence disagrees: the 23.2b probe (a perps-heavy trader) got
-    nothing older than its oldest served fill, but the 25.2c probe (an
-    outcome-heavy trader) paged 18,777 fills spanning 29 days in one
-    session. The cap's real shape is unknown, so coverage_from stays
-    conservative: how far back a trader's fills are PROVEN complete.
-
+    For time-window queries the evidence says otherwise: the 25.2c
+    probe paged 18,777 fills spanning 29 days in one session, and in
+    26.1 a resumed backfill was served 16,000 fills from 17 Oct to 4 Nov
+    for a trader with well over 10,000 fills after 4 Nov. So a backfill
+    proves coverage from its own start (decision A, 26.1b). The one
+    observation that disagrees is the 23.2b probe (a perps-heavy trader:
+    nothing older than its oldest served fill); largest_pass_fills and
+    the 25.2c probe are how to re-check.
 Verified by the 23.2b probe (the docs disagree with each other):
   - A full page holds the OLDEST fills of the window, oldest first, so
     paging forward from the newest fill received walks the window in
@@ -188,13 +190,10 @@ class FillCollector:
             # from `reached` instead of starting over (25.2c).
             through = now if result.complete else max(result.reached, start)
             if backfill:
-                if result.complete and not result.capped:
+                # Paging forward from `start` proves every fill from
+                # `start` up to `reached`, even when a very active
+                # trader takes several passes (decision A, 26.1b).
                     coverage = start
-                else:
-                    # Too many fills for one pass, or as many as the
-                    # documented cap: proven complete only from the
-                    # oldest fill received.
-                    coverage = result.oldest
             elif (
                 result.capped
                 and result.oldest is not None

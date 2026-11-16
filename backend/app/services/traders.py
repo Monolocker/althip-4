@@ -7,6 +7,7 @@ trade watcher (23.1) stores the addresses seen; the fill collector
 recorder.
 """
 
+import logging
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
@@ -15,6 +16,8 @@ from pathlib import Path
 from typing import Any
 
 from app.services.history import DEFAULT_DB_PATH
+
+logger = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS traders (
@@ -88,6 +91,15 @@ INSERT OR IGNORE INTO trader_fills (
 # coverage becomes unknown, which queues a fresh backfill for each.
 # Stored fills are kept: re-fetched ones are ignored as duplicates.
 REPAIR_23_2B = "23.2b-rebackfill-all"
+
+# 26.1b repair (decision A): before it, a very active trader's backfill
+# set coverage to the oldest fill RECEIVED, later than the backfill had
+# really proved, which kept them out of the 7d and 30d leaderboards.
+# Every trader whose coverage starts less than one backfill span ago
+# gets a fresh backfill under the new rule (coverage = backfill start).
+# Stored fills are kept: re-fetched ones are ignored as duplicates.
+REPAIR_26_1B = "26.1b-recheck-late-coverage"
+BACKFILL_SPAN_MS = 30 * 86_400_000  # fill_collector.BACKFILL_DAYS, in ms
 
 # Traders whose fills need fetching: coverage unknown (never fetched, or
 # reset by a repair), traded since the last fetch, or not checked for a
@@ -206,17 +218,35 @@ class TraderStore:
                 if column not in existing:
                     connection.execute(f"ALTER TABLE traders ADD COLUMN {column} {declaration}")
             connection.commit()
-            # The repair and its record commit together, or not at all.
-            with connection:
-                applied = connection.execute(
-                    "SELECT 1 FROM migrations WHERE name = ?", (REPAIR_23_2B,)
-                ).fetchone()
-                if applied is None:
-                    connection.execute("UPDATE traders SET coverage_from = NULL")
-                    connection.execute(
-                        "INSERT INTO migrations (name, applied_at) VALUES (?, ?)",
-                        (REPAIR_23_2B, datetime.now(timezone.utc).isoformat()),
-                    )
+            self._apply_once(connection, REPAIR_23_2B, "UPDATE traders SET coverage_from = NULL", ())
+            cutoff = int(datetime.now(timezone.utc).timestamp() * 1000) - BACKFILL_SPAN_MS
+            self._apply_once(
+                connection,
+                REPAIR_26_1B,
+                "UPDATE traders SET coverage_from = NULL WHERE coverage_from > ?",
+                (cutoff,),
+            )
+
+    @staticmethod
+    def _apply_once(
+        connection: sqlite3.Connection, name: str, sql: str, params: tuple[Any, ...]
+    ) -> None:
+        """Run a one-time data repair, recorded by name in `migrations`.
+
+        The repair and its record commit together, or not at all, so a
+        crash halfway cannot apply it twice or record it unapplied.
+        """
+        with connection:
+            applied = connection.execute(
+                "SELECT 1 FROM migrations WHERE name = ?", (name,)
+            ).fetchone()
+            if applied is None:
+                changed = connection.execute(sql, params).rowcount
+                connection.execute(
+                    "INSERT INTO migrations (name, applied_at) VALUES (?, ?)",
+                    (name, datetime.now(timezone.utc).isoformat()),
+                )
+                logger.info("Applied repair %s: %d traders reset", name, changed)
 
     def record(self, activity: dict[str, tuple[int, int]]) -> None:
         """Save a batch: address -> (latest trade time ms, trades in batch)."""
