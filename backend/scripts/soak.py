@@ -218,6 +218,12 @@ def summarize_csv(path: Path) -> None:
     # The second half's slope says whether they are STILL growing.
     half = number(good[len(good) // 2]["elapsedSeconds"]) if good else 0
     trend_columns = ["rssKib", "dbBytes", "walBytes", "shmBytes"] + [
+        # Queue and storage counters: is the fill collector catching up?
+        "health.fillCollect.tradersDue",
+        "health.fillCollect.needsBackfill",
+        "health.fillCollect.fillsStored",
+        "health.tradeWatch.tradersKnown",
+    ] + [
         column for column in rows[0]
         if column.startswith("runtime.") and column != "runtime.process.pid"
         and column != "runtime.process.uptimeSeconds"

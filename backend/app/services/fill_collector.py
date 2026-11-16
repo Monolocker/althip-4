@@ -9,11 +9,12 @@ Hyperliquid limits that shape it:
   - REST weight 1200/min per IP; userFillsByTime costs 20 plus 1 per
     20 fills returned (docs).
   - At most FILLS_PAGE_LIMIT fills per response (observed: exactly 2000).
-  - Only an address's 10,000 most recent fills are served at all (docs;
-    23.2b probe: nothing older than the oldest served fill came back),
-    so for very active traders the 30-day backfill is incomplete;
-    coverage_from records how far back each trader's fills really are
-    complete.
+  - The docs say only an address's 10,000 most recent fills are served.
+    The evidence disagrees: the 23.2b probe (a perps-heavy trader) got
+    nothing older than its oldest served fill, but the 25.2c probe (an
+    outcome-heavy trader) paged 18,777 fills spanning 29 days in one
+    session. The cap's real shape is unknown, so coverage_from stays
+    conservative: how far back a trader's fills are PROVEN complete.
 
 Verified by the 23.2b probe (the docs disagree with each other):
   - A full page holds the OLDEST fills of the window, oldest first, so
@@ -43,8 +44,10 @@ FILLS_PAGE_LIMIT = 2000
 BACKFILL_DAYS = 30  # first fetch covers the longest leaderboard window
 DAY_MS = 86_400_000
 HL_FILLS_SERVED_CAP = 10_000
-# The served cap allows about 6 pages per pass (2000 + 1999 per page
-# after the first). More means something unexpected: stop and log.
+# Pages per pass, so one very active trader cannot hold the queue. A
+# trader with more fills than this in the window (25.2c: one had 18,777
+# in 30 days) is finished over several passes: each pass saves how far
+# it got, and the next one continues from there.
 MAX_PAGES_PER_FETCH = 8
 RECHECK_HOURS = 6  # re-fetch quiet traders: positions may have settled
 OVERLAP_MS = 60_000  # re-read the last minute; duplicates are ignored
@@ -71,6 +74,7 @@ class PassResult:
     reached: int  # every fill before this time (unix ms) is stored
     oldest: int | None  # oldest fill received (the first page's first)
     count: int  # distinct fills received, ALL coins (the served cap counts all)
+    stuck: bool = False # a whole page inside one millisecond; no progress possible 
 
     @property
     def capped(self) -> bool:
@@ -127,9 +131,9 @@ class FillCollector:
         self.fills_stored = 0
         self.due = 0  # traders due right now (the whole queue)
         self.needs_backfill = 0  # of which coverage is unknown
-        # Largest number of fills one pass received. If Hyperliquid's
-        # served cap is 10,000, this settles near 10,000 and never far
-        # above it: a live check of the cap this code relies on.
+        # Largest number of fills one pass received: a live check of
+        # Hyperliquid's served cap. 25.2c saw 15,992 (8 full pages), more
+        # than the documented 10,000.
         self.largest_pass_fills = 0
         self.last_fetch_at: float | None = None
 
@@ -174,19 +178,32 @@ class FillCollector:
         result = await self._fetch_forward(address, start, now)
         self.largest_pass_fills = max(self.largest_pass_fills, result.count)
 
-        if backfill and not result.complete:
-            # An unfinished backfill (unexpected; logged) proves nothing
-            # about coverage: change nothing, so it starts over next turn.
+        if result.stuck:
+            # Paging could not move past one millisecond (unexpected;
+            # logged): change nothing, so it starts over next turn.
             through, coverage = fills_through, coverage_from
         else:
-            # Forward paging: everything before `reached` is stored.
+            # Forward paging: everything before `reached` is stored, so
+            # an unfinished pass still counts; the next one continues
+            # from `reached` instead of starting over (25.2c).
             through = now if result.complete else max(result.reached, start)
-            if result.capped and result.oldest is not None:
-                # Hyperliquid stopped serving older fills somewhere after
-                # `start`: complete only from the oldest one received.
+            if backfill:
+                if result.complete and not result.capped:
+                    coverage = start
+                else:
+                    # Too many fills for one pass, or as many as the
+                    # documented cap: proven complete only from the
+                    # oldest fill received.
+                    coverage = result.oldest
+            elif (
+                result.capped
+                and result.oldest is not None
+                and fills_through is not None
+                and result.oldest > fills_through
+            ):
+                # A big catch-up pass that did not even re-read the last
+                # stored fill: fills in between may not have been served.
                 coverage = result.oldest
-            elif backfill:
-                coverage = start
             else:
                 coverage = coverage_from
         await asyncio.to_thread(self._store.mark_collected, address, through, coverage)
@@ -223,9 +240,15 @@ class FillCollector:
             if newest <= cursor:
                 # A whole page inside one millisecond: paging cannot move on.
                 logger.warning("Fill paging stuck at %d for %s", cursor, address)
-                return PassResult(complete=False, reached=cursor, oldest=oldest, count=count)
+                return PassResult(
+                    complete=False, reached=cursor, oldest=oldest, count=count, stuck=True
+                )
             cursor = newest
             boundary = {_fill_key(fill) for fill in fills if int(fill.get("time", -1)) == newest}
 
-        logger.warning("Fill paging for %s exceeded %d pages", address, MAX_PAGES_PER_FETCH)
+               # Expected for very active traders (25.2c): the next pass resumes.
+        logger.info(
+            "Fill paging for %s stopped after %d pages; resumes from %d next turn",
+            address, MAX_PAGES_PER_FETCH, cursor,
+        )
         return PassResult(complete=False, reached=cursor, oldest=oldest, count=count)
