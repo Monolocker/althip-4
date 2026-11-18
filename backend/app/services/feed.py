@@ -43,6 +43,13 @@ SPORTS_TTL_SECONDS = 300.0
 TICKER_TTL_SECONDS = 60.0  # two info requests of weight 20 per refresh
 TRENDING_TTL_SECONDS = 0.0  # the market snapshot is already cached (15 s)
 
+# Backing off after HTTP 429 (26.5): Google news answered 429 repeatedly 
+# during long runs (25.2 soak, 26.1b log). Each 429 doubles the wait 
+# before the next attempt, from at least a minute and up to an hour, or
+# longer if the server's Retry-After asks for it. A success resets it
+MIN_BACKOFF_SECONDS = 60.0
+MAX_BACKOFF_SECONDS = 3600.0
+
 ITEMS_PER_KIND = 6
 NEWS_QUERIES = 3  # one subject per category, busiest first
 NEWS_PER_QUERY = 2
@@ -73,6 +80,20 @@ MarketsSource = Callable[[], Awaitable[list[OutcomeMarket]]]
 
 class FeedError(Exception):
     """A source could not be fetched or understood."""
+
+class RateLimitedError(FeedError):
+    """HTTP 429: the server asks us to slow down (M26.5)"""
+
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after  # seconds, if the server said 
+    
+def _retry_after_seconds(value: str | None) -> float | None:
+    """Retry-After in its seconds form; the HTTP-date form is ignored"""
+    try: 
+        return float(value) if value is not None else None
+    except ValueError:
+        return None
 
 
 # ---------------------------------------------------------------
@@ -166,6 +187,11 @@ async def _get(http: httpx.AsyncClient, url: str, params: dict[str, str] | None 
         raise FeedError(f"{type(exc).__name__} for {url}") from exc
     # 202 with an empty body is how ESPN's RSS refused us: treat any
     # non-200 as a failure rather than as "no news".
+    if response.status_code == 429:
+        raise RateLimitedError(
+            f"HTTP 429 for {url}", _retry_after_seconds(response.headers.get("Retry-After"))
+        )
+
     if response.status_code != 200:
         raise FeedError(f"HTTP {response.status_code} for {url}")
     return response.content
@@ -274,8 +300,10 @@ class CachedSource:
 
     A failed refresh keeps the last good items (a stale headline beats
     an empty strip) and is not retried before the interval is over, so
-    a source that is down is not hammered. The lock makes concurrent
-    requests share one refresh instead of each starting their own.
+    a source that is down is not hammered. A rate-limited refresh (429)
+    also lengthens the interval until a refresh succeeds (26.5). The
+    lock makes concurrent requests share one refresh instead of each
+    starting their own.
     """
 
     def __init__(self, kind: FeedKind, ttl_seconds: float, fetch: FetchItems) -> None:
@@ -287,12 +315,13 @@ class CachedSource:
         self._fetched_at: datetime | None = None
         self._attempted_at: float | None = None  # monotonic
         self._error: str | None = None
+        self._wait = ttl_seconds # seconds between attempts; grows after a 429 
 
     async def get(self) -> tuple[list[FeedItem], FeedSourceStatus]:
         async with self._lock:
             due = (
                 self._attempted_at is None
-                or time.monotonic() - self._attempted_at >= self._ttl
+                or time.monotonic() - self._attempted_at >= self._wait
             )
             if due:
                 self._attempted_at = time.monotonic()
@@ -300,6 +329,18 @@ class CachedSource:
                     self._items = await self._fetch()
                     self._fetched_at = datetime.now(timezone.utc)
                     self._error = None
+                    self._wait = self._ttl
+                except RateLimitedError as exc:
+                    self._wait = min(
+                        max(self._wait * 2, self._ttl, MIN_BACKOFF_SECONDS), MAX_BACKOFF_SECONDS
+                    )
+                    if exc.retry_after is not None:
+                        self._wait = max(self._wait, exc.retry_after)
+                    logger.warning(
+                        "Feed source %s rate limited (%s); next try in %.0f s",
+                        self.kind, exc, self._wait,
+                    )
+                    self._error = f"rate limited (HTTP 429); next try in {self._wait / 60:.0f} min"
                 except Exception as exc:
                     # Any failure, whatever its type, stays inside this
                     # source: the other kinds are still served.
@@ -358,6 +399,15 @@ class FeedService:
             ),
             return_exceptions=True,
         )
+        # Any 429 means "slow down" for the whole source, so it backs off
+        # (keeping its last good headlines) instead of logging every query.
+        limited = [body for body in bodies if isinstance(body, RateLimitedError)]
+        if limited:
+            waits = [error.retry_after for error in limited if error.retry_after is not None]
+            raise RateLimitedError(
+                f"Google News rate-limited {len(limited)} of {len(queries)} queries",
+                max(waits) if waits else None,
+            )
         items: list[FeedItem] = []
         seen: set[str] = set()
         errors = []

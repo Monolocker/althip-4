@@ -1507,33 +1507,6 @@ button {
   font-size: 0.75rem;
 }
 
-.history-badges {
-  display: inline-flex;
-  gap: 0.3rem;
-}
-
-.history-badge {
-  padding: 0.05rem 0.45rem;
-  border-radius: 999px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  cursor: help;
-}
-
-.history-badge--partial {
-  background: #fff4d6;
-  color: #7a5b00;
-}
-
-.history-badge--checking {
-  background: #eef0f5;
-  color: #4a5068;
-}
-
-.history-badge--behind {
-  background: #e8f1fb;
-  color: #2a5885;
-}
 
 /* Text for screen readers only (an icon-less column needs a name). */
 .visually-hidden {

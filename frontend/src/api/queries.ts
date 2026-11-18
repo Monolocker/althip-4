@@ -86,7 +86,13 @@ export function usePriceHistory(
                 ? skipToken
                 : ({ signal }) => fetchPriceHistory(marketId, range, signal),
         staleTime: PRICE_HISTORY_MS,
-        refetchInterval: PRICE_HISTORY_MS,
+        // M26.5: 404 means the history is gone for good (market settled):
+        // stop polling instead of asking again every min
+        // M25.2 saw 227 such requests for one settled market
+        refetchInterval: (query) =>
+            query.state.error instanceof ApiError && query.state.error.status === 404
+                ? false
+                : PRICE_HISTORY_MS,
         // Retrying a 404 cannot help: the market's history is gone
         // (settled). Anything else (502, network) gets the usual 3 tries.
         retry: (failureCount, error) =>
