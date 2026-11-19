@@ -15,6 +15,7 @@ import SidebarViewSwitch, {
   type SidebarView,
 } from "./components/SidebarViewSwitch"
 import TraderDashboard from "./components/TraderDashboard"
+import WalletButton from "./components/WalletButton"
 import {
   CLOSE_FILTER_LABELS,
   categoryLabel,
@@ -34,6 +35,7 @@ import {
 } from "./features/markets/discovery"
 import { groupEntries } from "./features/markets/grouping"
 import { readTraderLocation, traderHref } from "./features/trader/url"
+import { useWallet } from "./features/wallet/useWallet"
 import { useNow } from "./hooks/useNow"
 import type { LeaderboardWindow } from "./types/leaderboard"
 
@@ -84,6 +86,7 @@ function App() {
   }, [])
  
   const now = useNow(CLOCK_TICK_MS)
+  const wallet = useWallet()
   const marketsQuery = useMarkets()
   const detailQuery = useMarketDetail(selectedMarketId)
 
@@ -146,7 +149,7 @@ function App() {
     setSelectedMarketId(marketId)
   }
 
-// A trending item in the feed (24.3) opens its market from any view:
+  // A trending item in the feed (24.3) opens its market from any view:
   // in Deployers or Leaderboard the market detail would be hidden.
   function handleOpenMarketFromFeed(marketId: string) {
     setSidebarView("markets")
@@ -164,6 +167,13 @@ function App() {
     setSelectedTrader(address)
     setTraderWindow(leaderboardWindow)
     window.history.pushState(null, "", traderHref({ address, window: leaderboardWindow }))
+  }
+
+  // Your own account (27.2) is a trader dashboard like any other: the backend
+  // serves it by address, so no new endpoint is needed
+  function handleOpenMyDashboard(address: string) {
+    setSidebarView("leaderboard")
+    handleOpenTrader(address)
   }
 
   function handleTraderWindowChange(next: LeaderboardWindow) {
@@ -264,6 +274,7 @@ function App() {
           <h1>Hyperliquid Outcomes</h1>
           <p>Read-only outcome market terminal</p>
         </div>
+        <WalletButton wallet={wallet} onOpenDashboard={handleOpenMyDashboard} />
       </header>
 
       <FeedTicker onSelectMarket={handleOpenMarketFromFeed} />

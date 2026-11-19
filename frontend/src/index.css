@@ -20,6 +20,10 @@ button {
 }
 
 .app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
   margin-bottom: 1.5rem;
 }
 
@@ -1798,4 +1802,65 @@ button {
   .trader-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+
+/* Milestone 27.2: wallet connection (read-only) */
+.wallet-control {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.wallet-account {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.wallet-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.wallet-secondary {
+  color: #555;
+}
+
+.wallet-status {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.wallet-picker {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 10;
+  min-width: 200px;
+  margin: 0.25rem 0 0;
+  padding: 0.25rem;
+  list-style: none;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+}
+
+.wallet-picker button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+}
+
+.wallet-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: #b00020;
+  font-size: 0.85rem;
+  text-align: right;
 }
