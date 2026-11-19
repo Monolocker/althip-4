@@ -307,7 +307,7 @@ class CachedSource:
     """
 
     def __init__(self, kind: FeedKind, ttl_seconds: float, fetch: FetchItems) -> None:
-        self.kind = kind
+        self.kind: FeedKind = kind  # annotated: pyright would widen it to str
         self._ttl = ttl_seconds
         self._fetch = fetch
         self._lock = asyncio.Lock()

@@ -7,10 +7,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.models.market import (
+    BookQuality,
     BookSummary,
     OutcomeMarket, 
     OutcomeMarketDetail,
     OutcomeSide,
+    PayoutKind,
     QuestionMembership,
     QuestionRef,
     Settlement,
@@ -180,7 +182,7 @@ def template_id(name: str) -> str | None:
 # are binary.
 SCALAR_TEMPLATE_IDS = frozenset({"scalarPrice", "sportsScalarMarket"})
 
-def payout_kind(name: str) -> str:
+def payout_kind(name: str) -> PayoutKind:
     """'scalar' for proportional-payout templates, otherwise 'binary'."""
     return "scalar" if template_id(name) in SCALAR_TEMPLATE_IDS else "binary"
 
@@ -472,7 +474,7 @@ PLACEHOLDER_MARK = "0.5"
 
 def classify_spread(
     bid: float | None, ask: float | None
-) -> tuple[float | None, str]:
+) -> tuple[float | None, BookQuality]:
     """(spread, quality) for a top of book.
 
     The spread is rounded to 6 decimals before comparing: in floating
@@ -745,11 +747,14 @@ def parse_settle_fraction(settled: dict[str, Any]) -> float | None:
     Shared by the settled detail view (Milestone 13) and the history
     recorder (Milestone 21), so both read a settlement the same way.
     """
+    value = settled.get("settleFraction")
+    if value is None:
+        return None
     try:
-        return float(settled.get("settleFraction"))
+        return float(value)
     except (TypeError, ValueError):
         return None
-
+    
 def normalize_settled_detail(
     settled: dict[str, Any], data: MarketData
 ) -> OutcomeMarketDetail:
@@ -893,7 +898,9 @@ if __name__ == "__main__":
             1
             for m in priced
             if len(m.sides) == 2
-            and abs(m.sides[0].price + m.sides[1].price - 1.0) < 0.001
+            and (first := m.sides[0].price) is not None
+            and (second := m.sides[1].price) is not None
+            and abs(first + second - 1.0) < 0.001
         )
         print(f"\nquestion fell back to raw description: {len(fallbacks)}")
         for m in fallbacks[:5]:

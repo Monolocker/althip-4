@@ -11,6 +11,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# Plain aliases (not 'Type X = ...'), so the JSON schema stays inline
+BookQuality = Literal["tight", "wide", "unreliable"]
+PayoutKind = Literal["binary", "scalar"]
 
 class OutcomeSide(BaseModel):
     """One tradable side of an outcome market (e.g. Yes or No)."""
@@ -32,7 +35,7 @@ class BookSummary(BaseModel):
 
     # tight: spread <= 2c. wide: <= 10c. unreliable: > 10c, empty, one-sided,
     # or a never-traded market (placeholder mark of 0.5).
-    quality: Literal["tight", "wide", "unreliable"]
+    quality: BookQuality
     # "sweep": measured from the order book. "mark": inferred from the
     # placeholder mark because no fresh sweep data exists yet.
     source: Literal["sweep", "mark"]
@@ -138,7 +141,7 @@ class OutcomeMarket(BaseModel):
     # "binary" = each sides settles to $1 or $0. Thus, a side's price
     # is a market-implied probablility. "scalar" = sides pay out 
     # proportionally (long/short on a price range). Prices != prob
-    payout: Literal["binary", "scalar"] = "binary"
+    payout: PayoutKind = "binary"
     # Set when this market belongs to a multi-outcome question
     parent: QuestionRef | None = None
     # HL's own category for the market's template

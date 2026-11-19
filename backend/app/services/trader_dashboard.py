@@ -46,8 +46,9 @@ BUCKET_MS: dict[LeaderboardWindow, int] = {
 SideIndex = dict[str, tuple[OutcomeMarket, OutcomeSide]]
 
 
-def _utc(ms: int | None) -> datetime | None:
-    return None if ms is None else datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
+def _utc(ms: int) -> datetime:
+    """Epoch milliseconds -> UTC datetime. Every caller has a real time."""
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
 
 
 def _num(value: Any) -> float | None:

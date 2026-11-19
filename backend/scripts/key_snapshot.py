@@ -23,6 +23,7 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Any
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = BACKEND_DIR / "data"
@@ -31,7 +32,7 @@ BASE_URL = "http://127.0.0.1:8000"
 SNAKE = re.compile(r"[a-z0-9]_[a-z0-9]")
 
 
-def get_json(path: str) -> object:
+def get_json(path: str) -> Any:
     with urllib.request.urlopen(BASE_URL + path, timeout=60) as response:
         return json.load(response)
 
@@ -104,7 +105,7 @@ def endpoints_to_check() -> dict[str, str]:
 
 
 def record(label: str) -> None:
-    snapshot: dict[str, object] = {"schemas": schema_fields(get_json("/openapi.json")), "endpoints": {}}
+    snapshot: dict[str, Any] = {"schemas": schema_fields(get_json("/openapi.json")), "endpoints": {}}
     for name, path in endpoints_to_check().items():
         try:
             body = get_json(path)

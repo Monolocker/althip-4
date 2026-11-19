@@ -95,7 +95,9 @@ class KalshiClient:
         data = response.json()
         if not isinstance(data, dict):
             return []
-        event = data.get("event") if isinstance(data.get("event"), dict) else {}
+        event = data.get("event") 
+        if not isinstance(event, dict):
+            event = {}
         markets = event.get("markets") or data.get("markets") or []
         return [m for m in markets if isinstance(m, dict)]
 

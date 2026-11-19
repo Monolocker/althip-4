@@ -12,7 +12,8 @@ import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator
+from collections.abc import Awaitable, Callable
+from typing import Any, AsyncIterator, cast
 
 import httpx
 from fastapi import FastAPI, HTTPException, Path, Query, Response
@@ -742,13 +743,21 @@ EXECUTION_ASSUMPTIONS = [
 ]
 
 
-async def cached_input(key: tuple, ttl: float, fetch):
-    """Reuse a fetched input for `ttl` seconds (keyed by venue + id)."""
+async def cached_input[T](key: tuple, ttl: float, fetch: Callable[[], Awaitable[T]]) -> T:
+    """Reuse a fetched input for `ttl` seconds (keyed by venue + id).
+
+    Generic: the caller gets back the type its `fetch` returns, e.g.
+    dict[str, Any] | None for fetch_market. One cache holds every kind
+    of input, so values are stored as `object` and cast back on a hit.
+    The cast is sound because every key names its source (venue, kind,
+    id): a key is only ever filled by one fetch function, so a hit has
+    the type that function returns.
+    """
     cache: dict[tuple, tuple[float, object]] = app.state.execution_cache
     hit = cache.get(key)
     now = time.monotonic()
     if hit is not None and now - hit[0] < ttl:
-        return hit[1]
+        return cast(T, hit[1])
     value = await fetch()
     cache[key] = (now, value)
     return value
