@@ -37,10 +37,10 @@ class PriceHistory(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    market_id: str = Field(alias="marketId")
+    market_id: str = Field(validation_alias="marketId", serialization_alias="marketId")
     coin: str   # always side 0: side 1's history mirrors it exactly
     range: CandleRange
     interval: str   # candle interval used, e.g. "1h"
     candles: list[Candle]   # oldest first; empty if never traded
-    fetched_at: datetime = Field(alias="fetchedAt")
+    fetched_at: datetime = Field(validation_alias="fetchedAt", serialization_alias="fetchedAt")
     source: HistorySource = "hyperliquid"

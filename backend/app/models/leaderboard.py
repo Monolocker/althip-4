@@ -18,12 +18,22 @@ class LeaderboardRow(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     address: str
-    net_pnl: float = Field(alias="netPnl")  # gross_pnl - fees: the ranking measure
-    gross_pnl: float = Field(alias="grossPnl")  # sum of closedPnl (before fees)
+    net_pnl: float = Field(  # gross_pnl - fees: the ranking measure
+        validation_alias="netPnl", serialization_alias="netPnl"
+    )
+    gross_pnl: float = Field(  # sum of closedPnl (before fees)
+        validation_alias="grossPnl", serialization_alias="grossPnl"
+    )
     # Where gross_pnl came from; the three always add up to it.
-    trading_pnl: float = Field(alias="tradingPnl")  # Buy / Sell fills
-    settlement_pnl: float = Field(alias="settlementPnl")  # Settlement fills
-    conversion_pnl: float = Field(alias="conversionPnl")  # merges, splits, negations
+    trading_pnl: float = Field(  # Buy / Sell fills
+        validation_alias="tradingPnl", serialization_alias="tradingPnl"
+    )
+    settlement_pnl: float = Field(  # Settlement fills
+        validation_alias="settlementPnl", serialization_alias="settlementPnl"
+    )
+    conversion_pnl: float = Field(  # merges, splits, negations
+        validation_alias="conversionPnl", serialization_alias="conversionPnl"
+    )
     fees: float
     volume: float  # USDC notional of Buy / Sell fills only
     markets: int  # distinct outcomes (both sides of a market count once)
@@ -40,12 +50,24 @@ class Leaderboard(BaseModel):
 
     window: LeaderboardWindow
     # None for All-Time: every trader counts from their own history start
-    window_start: datetime | None = Field(alias="windowStart")
-    generated_at: datetime = Field(alias="generatedAt")
-    traders_known: int = Field(alias="tradersKnown")  # discovered by the trade stream
-    traders_pending: int = Field(alias="tradersPending")  # discovered, never fetched
-    traders_ranked: int = Field(alias="tradersRanked")  # complete, with fills in window
+    window_start: datetime | None = Field(
+        validation_alias="windowStart", serialization_alias="windowStart"
+    )
+    generated_at: datetime = Field(
+        validation_alias="generatedAt", serialization_alias="generatedAt"
+    )
+    traders_known: int = Field(  # discovered by the trade stream
+        validation_alias="tradersKnown", serialization_alias="tradersKnown"
+    )
+    traders_pending: int = Field(  # discovered, never fetched
+        validation_alias="tradersPending", serialization_alias="tradersPending"
+    )
+    traders_ranked: int = Field(  # complete, with fills in window
+        validation_alias="tradersRanked", serialization_alias="tradersRanked"
+    )
     # Left out because their stored fills do not cover this window yet
     # (pending traders included).
-    traders_excluded: int = Field(alias="tradersExcluded")
+    traders_excluded: int = Field(
+        validation_alias="tradersExcluded", serialization_alias="tradersExcluded"
+    )
     rows: list[LeaderboardRow]  # best first; the first 'limit' only

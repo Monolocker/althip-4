@@ -18,12 +18,18 @@ class FeedItem(BaseModel):
     kind: FeedKind
     text: str  # full text, never truncated: shortening is the UI's job
     url: str | None = None  # external link: an article or a trade page
-    market_id: str | None = Field(default=None, alias="marketId")  # trending: one of ours
+    market_id: str | None = Field(  # trending: one of ours
+        default=None, validation_alias="marketId", serialization_alias="marketId"
+    )
     source: str | None = None  # outlet or venue, e.g. "ESPN", "Reuters"
-    published_at: datetime | None = Field(default=None, alias="publishedAt")
+    published_at: datetime | None = Field(
+        default=None, validation_alias="publishedAt", serialization_alias="publishedAt"
+    )
     # ticker: 24h price change as a fraction (0.0201 = +2.01%); None
     # when Hyperliquid has no price from a day ago.
-    change_24h: float | None = Field(default=None, alias="change24h")
+    change_24h: float | None = Field(
+        default=None, validation_alias="change24h", serialization_alias="change24h"
+    )
     # trending: side-0 implied probability (binary markets only).
     probability: float | None = None
 
@@ -38,7 +44,9 @@ class FeedSourceStatus(BaseModel):
     items: int
     # When the items shown were fetched. A failed refresh keeps the last
     # good items, so this can be older than the failure.
-    fetched_at: datetime | None = Field(alias="fetchedAt")
+    fetched_at: datetime | None = Field(
+        validation_alias="fetchedAt", serialization_alias="fetchedAt"
+    )
     error: str | None = None
 
 
@@ -47,6 +55,8 @@ class Feed(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    generated_at: datetime = Field(alias="generatedAt")
+    generated_at: datetime = Field(
+        validation_alias="generatedAt", serialization_alias="generatedAt"
+    )
     items: list[FeedItem]
     sources: list[FeedSourceStatus]

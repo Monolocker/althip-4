@@ -39,7 +39,9 @@ class BookSummary(BaseModel):
     bid: float | None = None
     ask: float | None = None
     spread: float | None = None
-    checked_at: datetime | None = Field(default=None, alias="checkedAt")
+    checked_at: datetime | None = Field(
+        default=None, validation_alias="checkedAt", serialization_alias="checkedAt"
+    )
 
 class QuestionRef(BaseModel):
     """Compact link from an outcome to its multi-outcome question (18.6a).
@@ -57,7 +59,7 @@ class QuestionRef(BaseModel):
     role: Literal["named", "fallback"]
     # This outcome's own name within the question: "Juventus", "Draw",
     # "Fallback". The full title of the market stays in `question`.
-    outcome_label: str = Field(alias="outcomeLabel")
+    outcome_label: str = Field(validation_alias="outcomeLabel", serialization_alias="outcomeLabel")
 
 
 class SpecDifference(BaseModel):
@@ -66,8 +68,12 @@ class SpecDifference(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     key: str  # spec key, e.g. "listingDeadline"
-    this_value: str = Field(alias="thisValue")  # display-formatted
-    other_value: str = Field(alias="otherValue")  # display-formatted
+    this_value: str = Field(  # display-formatted
+        validation_alias="thisValue", serialization_alias="thisValue"
+    )
+    other_value: str = Field(  # display-formatted
+        validation_alias="otherValue", serialization_alias="otherValue"
+    )
 
 
 class Lookalike(BaseModel):
@@ -80,7 +86,7 @@ class Lookalike(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    market_id: str = Field(alias="marketId")
+    market_id: str = Field(validation_alias="marketId", serialization_alias="marketId")
     venue: str
     differences: list[SpecDifference]
 
@@ -97,24 +103,36 @@ class OutcomeMarket(BaseModel):
     status: Literal["open", "settled"] = "open"
     # When the deciding event is scheduled: price observation time, game
     # start, scheduled decision. None when the spec names no event time.
-    event_at: datetime | None = Field(default=None, alias="eventAt")
+    event_at: datetime | None = Field(
+        default=None, validation_alias="eventAt", serialization_alias="eventAt"
+    )
     # Latest expected resolution time. Equal to event_at for price markets;
     # a separate, later deadline for sports, policy, awards and IPOs.
-    resolves_by: datetime | None = Field(default=None, alias="resolvesBy")
-    quote_token: str = Field(default="USDC", alias="quoteToken")
+    resolves_by: datetime | None = Field(
+        default=None, validation_alias="resolvesBy", serialization_alias="resolvesBy"
+    )
+    quote_token: str = Field(
+        default="USDC", validation_alias="quoteToken", serialization_alias="quoteToken"
+    )
     venue: str = ""
     sides: list[OutcomeSide]
     # Contracts traded in the last 24h (HL dayBaseVlm). Total USDC 
     # traded across both sides of the outcome market. None when HL
     # reported no trading context
-    volume_24h: float | None = Field(default=None, alias="volume24h")
+    volume_24h: float | None = Field(
+        default=None, validation_alias="volume24h", serialization_alias="volume24h"
+    )
     # Side-0 price about 24h ago (HL prevDayPx; observed in 20.2 to match
     # the candle from 24h earlier within ~0.3c). None when HL reports 0.0,
     # which means "no history" (never traded, or younger than a day).
-    price_24h_ago: float | None = Field(default=None, alias="price24hAgo")
+    price_24h_ago: float | None = Field(
+        default=None, validation_alias="price24hAgo", serialization_alias="price24hAgo"
+    )
     # Current side-0 price minus price_24h_ago, in price units (0.054 =
     # +5.4 percentage points). None whenever either price is missing.
-    change_24h: float | None = Field(default=None, alias="change24h")
+    change_24h: float | None = Field(
+        default=None, validation_alias="change24h", serialization_alias="change24h"
+    )
     # Side-0 book quality; None when there is no evidence either way
     book: BookSummary | None = None
     # "binary" = each sides settles to $1 or $0. Thus, a side's price
@@ -136,12 +154,12 @@ class QuestionMembership(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    question_id: str = Field(alias="questionId")
+    question_id: str = Field(validation_alias="questionId", serialization_alias="questionId")
     name: str
     description: str
-    is_fallback: bool = Field(alias="isFallback")
+    is_fallback: bool = Field(validation_alias="isFallback", serialization_alias="isFallback")
     # Other outcomes belonging to the same question, excluding this one.
-    sibling_ids: list[str] = Field(alias="siblingIds")
+    sibling_ids: list[str] = Field(validation_alias="siblingIds", serialization_alias="siblingIds")
     # Rendered from the question's template (M18.1b); None when the 
     # template is unknown or a placeholder has no value
     title: str | None = None
@@ -154,10 +172,14 @@ class Settlement(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     # Payout per unit to side 0 (e.g. Yes): 1.0 = side 0 won, 0.0 = side 1 won.
-    settle_fraction: float | None = Field(default=None, alias="settleFraction")
+    settle_fraction: float | None = Field(
+        default=None, validation_alias="settleFraction", serialization_alias="settleFraction"
+    )
     details: str = ""
     # Derived: 0 or 1 for a clean win, None for partial/unknown settlements.
-    winning_side_index: int | None = Field(default=None, alias="winningSideIndex")
+    winning_side_index: int | None = Field(
+        default=None, validation_alias="winningSideIndex", serialization_alias="winningSideIndex"
+    )
 
 
 class OutcomeMarketDetail(OutcomeMarket):
@@ -166,7 +188,7 @@ class OutcomeMarketDetail(OutcomeMarket):
     spec: dict[str, str]  # the description string, parsed into fields
     deployer: str | None = None  # deployer address for this market's venue
     question_group: QuestionMembership | None = Field(
-        default=None, alias="questionGroup"
+        default=None, validation_alias="questionGroup", serialization_alias="questionGroup"
     )
     settlement: Settlement | None = None  # present only when status is settled
     # This market's resolution rules, rendered from its template's

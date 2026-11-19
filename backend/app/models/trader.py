@@ -19,8 +19,12 @@ class TraderStats(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    net_pnl: float = Field(alias="netPnl")  # gross_pnl - fees
-    gross_pnl: float = Field(alias="grossPnl")  # sum of closedPnl (before fees)
+    net_pnl: float = Field(  # gross_pnl - fees
+        validation_alias="netPnl", serialization_alias="netPnl"
+    )
+    gross_pnl: float = Field(  # sum of closedPnl (before fees)
+        validation_alias="grossPnl", serialization_alias="grossPnl"
+    )
     fees: float
     volume: float  # USDC notional of Buy / Sell fills only
     markets: int  # distinct outcomes traded in the window
@@ -34,9 +38,11 @@ class BiggestWin(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    market_id: str = Field(alias="marketId")  # outcome id: opens in our app
+    market_id: str = Field(  # outcome id: opens in our app
+        validation_alias="marketId", serialization_alias="marketId"
+    )
     title: str | None  # None if this app never recorded the market
-    net_pnl: float = Field(alias="netPnl")
+    net_pnl: float = Field(validation_alias="netPnl", serialization_alias="netPnl")
 
 
 class PnlPoint(BaseModel):
@@ -51,16 +57,16 @@ class ResolvedMarket(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    market_id: str = Field(alias="marketId")
+    market_id: str = Field(validation_alias="marketId", serialization_alias="marketId")
     title: str | None
-    net_pnl: float = Field(alias="netPnl")
+    net_pnl: float = Field(validation_alias="netPnl", serialization_alias="netPnl")
     fees: float
     volume: float
     result: Literal["win", "loss", "even"]
     # True if the market settled for this trader (a Settlement fill);
     # False if they closed out by selling or converting.
     settled: bool
-    last_fill_at: datetime = Field(alias="lastFillAt")
+    last_fill_at: datetime = Field(validation_alias="lastFillAt", serialization_alias="lastFillAt")
 
 
 class TraderPosition(BaseModel):
@@ -69,12 +75,16 @@ class TraderPosition(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     coin: str  # "#N": the side's trading coin
-    market_id: str = Field(alias="marketId")
+    market_id: str = Field(validation_alias="marketId", serialization_alias="marketId")
     title: str
-    side_label: str = Field(alias="sideLabel")
+    side_label: str = Field(validation_alias="sideLabel", serialization_alias="sideLabel")
     shares: float  # balance "total"
-    on_hold: float = Field(alias="onHold")  # "hold": locked by open orders
-    entry_notional: float | None = Field(alias="entryNotional")  # "entryNtl": cost basis
+    on_hold: float = Field(  # "hold": locked by open orders
+        validation_alias="onHold", serialization_alias="onHold"
+    )
+    entry_notional: float | None = Field(  # "entryNtl": cost basis
+        validation_alias="entryNotional", serialization_alias="entryNotional"
+    )
     price: float | None  # market-implied probability now; None if unknown
     value: float | None  # shares * price; None when the price is unknown
 
@@ -97,17 +107,19 @@ class TraderOrder(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     coin: str
-    market_id: str = Field(alias="marketId")
+    market_id: str = Field(validation_alias="marketId", serialization_alias="marketId")
     title: str | None  # None if the market is no longer in the live snapshot
-    side_label: str | None = Field(alias="sideLabel")
+    side_label: str | None = Field(validation_alias="sideLabel", serialization_alias="sideLabel")
     direction: Literal["buy", "sell"]  # Hyperliquid side "B" / "A"
     price: float  # limit price
     size: float  # remaining
-    original_size: float = Field(alias="originalSize")
-    placed_at: datetime = Field(alias="placedAt")
-    order_type: str | None = Field(alias="orderType")
+    original_size: float = Field(
+        validation_alias="originalSize", serialization_alias="originalSize"
+    )
+    placed_at: datetime = Field(validation_alias="placedAt", serialization_alias="placedAt")
+    order_type: str | None = Field(validation_alias="orderType", serialization_alias="orderType")
     tif: str | None  # time in force, e.g. "Alo" (post only), "Gtc"
-    reduce_only: bool = Field(alias="reduceOnly")
+    reduce_only: bool = Field(validation_alias="reduceOnly", serialization_alias="reduceOnly")
 
 
 class TraderDashboard(BaseModel):
@@ -117,19 +129,31 @@ class TraderDashboard(BaseModel):
 
     address: str
     window: LeaderboardWindow
-    window_start: datetime | None = Field(alias="windowStart")  # None for All-Time
-    generated_at: datetime = Field(alias="generatedAt")
+    window_start: datetime | None = Field(  # None for All-Time
+        validation_alias="windowStart", serialization_alias="windowStart"
+    )
+    generated_at: datetime = Field(
+        validation_alias="generatedAt", serialization_alias="generatedAt"
+    )
     # Same rule as the leaderboard: are this trader's stored fills
     # complete for the window? If not, figures start at history_from.
     complete: bool
-    history_from: datetime | None = Field(alias="historyFrom")
-    fills_through: datetime | None = Field(alias="fillsThrough")
+    history_from: datetime | None = Field(
+        validation_alias="historyFrom", serialization_alias="historyFrom"
+    )
+    fills_through: datetime | None = Field(
+        validation_alias="fillsThrough", serialization_alias="fillsThrough"
+    )
     stats: TraderStats
-    biggest_win: BiggestWin | None = Field(alias="biggestWin")  # None: no winning market
-    pnl_series: list[PnlPoint] = Field(alias="pnlSeries")  # starts at 0 at history_from
+    biggest_win: BiggestWin | None = Field(  # None: no winning market
+        validation_alias="biggestWin", serialization_alias="biggestWin"
+    )
+    pnl_series: list[PnlPoint] = Field(  # starts at 0 at history_from
+        validation_alias="pnlSeries", serialization_alias="pnlSeries"
+    )
     resolved: list[ResolvedMarket]  # most recent first
     # Live parts: None when Hyperliquid could not be reached; live_error
     # then says why, and the stored figures above are still valid.
     positions: TraderPositions | None
     orders: list[TraderOrder] | None  # newest first
-    live_error: str | None = Field(alias="liveError")
+    live_error: str | None = Field(validation_alias="liveError", serialization_alias="liveError")

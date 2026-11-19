@@ -25,19 +25,21 @@ class VenueQuote(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     venue: Venue
-    external_id: str = Field(alias="externalId")    # Polymarket id / Kalshi ticker
+    external_id: str = Field(  # Polymarket id / Kalshi ticker
+        validation_alias="externalId", serialization_alias="externalId"
+    )
     title: str
     # The side the prices refer to: "Yes" for nearly every market
-    side_label: str = Field(alias="sideLabel")
+    side_label: str = Field(validation_alias="sideLabel", serialization_alias="sideLabel")
     # Best bid / best ask / a reference price for that side, in dollars
     # per $1 contract (0.43 = 43c). None when the venue reports none
     bid: float | None
     ask: float | None
     price: float | None
     status: str     # the venue's own word: "active", "closed", "open", ...
-    closes_at: datetime | None = Field(alias="closesAt")
+    closes_at: datetime | None = Field(validation_alias="closesAt", serialization_alias="closesAt")
     rules: str 
-    fetched_at: datetime = Field(alias="fetchedAt")
+    fetched_at: datetime = Field(validation_alias="fetchedAt", serialization_alias="fetchedAt")
 
 class VenueLink(BaseModel):
     """A confirmed link: one HL outcome <-> one external market"""
@@ -45,12 +47,12 @@ class VenueLink(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: int
-    market_id: str = Field(alias="marketId")
+    market_id: str = Field(validation_alias="marketId", serialization_alias="marketId")
     venue: Venue
-    external_id: str = Field(alias="externalId")
-    match_level: MatchLevel = Field(alias="matchLevel")
+    external_id: str = Field(validation_alias="externalId", serialization_alias="externalId")
+    match_level: MatchLevel = Field(validation_alias="matchLevel", serialization_alias="matchLevel")
     note: str
-    created_at: datetime = Field(alias="createdAt")
+    created_at: datetime = Field(validation_alias="createdAt", serialization_alias="createdAt")
 
     
 class LinkTarget(BaseModel):
@@ -58,8 +60,8 @@ class LinkTarget(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    market_id: str = Field(alias="marketId")
-    external_id: str = Field(alias="externalId")
+    market_id: str = Field(validation_alias="marketId", serialization_alias="marketId")
+    external_id: str = Field(validation_alias="externalId", serialization_alias="externalId")
 
 class LinkGroupCreate(BaseModel):
     """Request body for POST /links: a whole match confirmed at once
@@ -68,7 +70,7 @@ class LinkGroupCreate(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     venue: Venue
-    match_level: MatchLevel = Field(alias="matchLevel")
+    match_level: MatchLevel = Field(validation_alias="matchLevel", serialization_alias="matchLevel")
     note: str = ""
     links: list[LinkTarget] = Field(min_length=1)
 
@@ -78,8 +80,8 @@ class SuggestedPair(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    market_id: str = Field(alias="marketId")
-    outcome_label: str = Field(alias="outcomeLabel")
+    market_id: str = Field(validation_alias="marketId", serialization_alias="marketId")
+    outcome_label: str = Field(validation_alias="outcomeLabel", serialization_alias="outcomeLabel")
     quote: VenueQuote
 
 
@@ -89,7 +91,7 @@ class Suggestion(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     venue: Venue
-    event_title: str = Field(alias="eventTitle")
+    event_title: str = Field(validation_alias="eventTitle", serialization_alias="eventTitle")
     pairs: list[SuggestedPair]
     # Hyperliquid outcomes with no counterpart found (always the fallback).
     unmatched: list[str]

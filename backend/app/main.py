@@ -314,21 +314,31 @@ class SweepStatus(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    coins_tracked: int = Field(alias="coinsTracked")
-    last_completed_at: datetime | None = Field(alias="lastCompletedAt")
-    last_failures: int = Field(alias="lastFailures")
+    coins_tracked: int = Field(validation_alias="coinsTracked", serialization_alias="coinsTracked")
+    last_completed_at: datetime | None = Field(
+        validation_alias="lastCompletedAt", serialization_alias="lastCompletedAt"
+    )
+    last_failures: int = Field(validation_alias="lastFailures", serialization_alias="lastFailures")
 
 class HistoryStatus(BaseModel):
     """Whether the history recorder is alive and how much it has stored"""
 
     model_config = ConfigDict(populate_by_name=True)
 
-    last_recorded_at: datetime | None = Field(alias="lastRecordedAt")
-    last_batch: int = Field(alias="lastBatch")
-    slots_recorded: int = Field(alias="slotsRecorded")
-    settlements_recorded: int = Field(alias="settlementsRecorded")
-    pending_settlements: int = Field(alias="pendingSettlements")
-    file_bytes: int = Field(alias="fileBytes")
+    last_recorded_at: datetime | None = Field(
+        validation_alias="lastRecordedAt", serialization_alias="lastRecordedAt"
+    )
+    last_batch: int = Field(validation_alias="lastBatch", serialization_alias="lastBatch")
+    slots_recorded: int = Field(
+        validation_alias="slotsRecorded", serialization_alias="slotsRecorded"
+    )
+    settlements_recorded: int = Field(
+        validation_alias="settlementsRecorded", serialization_alias="settlementsRecorded"
+    )
+    pending_settlements: int = Field(
+        validation_alias="pendingSettlements", serialization_alias="pendingSettlements"
+    )
+    file_bytes: int = Field(validation_alias="fileBytes", serialization_alias="fileBytes")
 
 class TradeWatchStatus(BaseModel):
     """Whether trader discovery is connected and finding traders (23.1)."""
@@ -337,31 +347,47 @@ class TradeWatchStatus(BaseModel):
 
     connected: bool
     subscriptions: int
-    trades_seen: int = Field(alias="tradesSeen")
-    traders_known: int = Field(alias="tradersKnown")
-    last_trade_at: datetime | None = Field(alias="lastTradeAt")
+    trades_seen: int = Field(validation_alias="tradesSeen", serialization_alias="tradesSeen")
+    traders_known: int = Field(validation_alias="tradersKnown", serialization_alias="tradersKnown")
+    last_trade_at: datetime | None = Field(
+        validation_alias="lastTradeAt", serialization_alias="lastTradeAt"
+    )
 
 class FillCollectStatus(BaseModel):
     """Progress of the trader fill collector (23.2)."""
 
     model_config = ConfigDict(populate_by_name=True)
 
-    weight_per_minute: int = Field(alias="weightPerMinute")
-    traders_collected: int = Field(alias="tradersCollected")
-    traders_due: int = Field(alias="tradersDue")
-    needs_backfill: int = Field(alias="needsBackfill")  # coverage unknown (23.2b)
-    largest_pass_fills: int = Field(alias="largestPassFills")   # served-cap check
-    fills_stored: int = Field(alias="fillsStored")
-    last_fetch_at: datetime | None = Field(alias="lastFetchAt")
+    weight_per_minute: int = Field(
+        validation_alias="weightPerMinute", serialization_alias="weightPerMinute"
+    )
+    traders_collected: int = Field(
+        validation_alias="tradersCollected", serialization_alias="tradersCollected"
+    )
+    traders_due: int = Field(validation_alias="tradersDue", serialization_alias="tradersDue")
+    needs_backfill: int = Field(  # coverage unknown (23.2b)
+        validation_alias="needsBackfill", serialization_alias="needsBackfill"
+    )
+    largest_pass_fills: int = Field(  # served-cap check
+        validation_alias="largestPassFills", serialization_alias="largestPassFills"
+    )
+    fills_stored: int = Field(validation_alias="fillsStored", serialization_alias="fillsStored")
+    last_fetch_at: datetime | None = Field(
+        validation_alias="lastFetchAt", serialization_alias="lastFetchAt"
+    )
 
 class HealthResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     status: str
-    book_sweep: SweepStatus = Field(alias="bookSweep")
+    book_sweep: SweepStatus = Field(validation_alias="bookSweep", serialization_alias="bookSweep")
     history: HistoryStatus
-    trade_watch: TradeWatchStatus = Field(alias="tradeWatch")
-    fill_collect: FillCollectStatus = Field(alias="fillCollect")
+    trade_watch: TradeWatchStatus = Field(
+        validation_alias="tradeWatch", serialization_alias="tradeWatch"
+    )
+    fill_collect: FillCollectStatus = Field(
+        validation_alias="fillCollect", serialization_alias="fillCollect"
+    )
 
 
 @app.get("/health", response_model_by_alias=True)
