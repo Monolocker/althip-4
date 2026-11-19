@@ -56,7 +56,7 @@ NEWS_PER_QUERY = 2
 
 EXTERNAL_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 # An honest User-Agent: we never disguise the app as a browser.
-USER_AGENT = "althip-4 (local read-only outcome market terminal)"
+USER_AGENT = "Cross (local read-only outcome market terminal)"
 GOOGLE_NEWS_URL = "https://news.google.com/rss/search"
 ESPN_NEWS_URLS = {
     "NFL": "https://site.api.espn.com/apis/site/v2/sports/football/nfl/news",
